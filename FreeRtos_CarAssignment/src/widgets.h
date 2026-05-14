@@ -1,0 +1,125 @@
+#ifndef DISPLAY_WIDGETS_H
+#define DISPLAY_WIDGETS_H
+
+#include "taskman.h"
+
+// ====================== Extern Declarations for All Widgets ======================
+
+// Main Panels
+extern tCanvasWidget g_psPanels[];
+
+// Panel 1 - Inputs
+extern tSliderWidget g_psSliders[];
+extern tCanvasWidget g_psCheckBoxIndicators[];
+extern tCheckBoxWidget g_psCheckBoxes[];
+extern tCanvasWidget g_psPushButtonIndicators[];
+extern tPushButtonWidget g_psPushButtons[];
+
+extern tCanvasWidget g_sAccelValueCanvas;
+extern tCanvasWidget g_sDistanceCanvas;
+
+extern tCanvasWidget g_sCoolingStatusCanvas;
+extern tCanvasWidget g_sLuxMinValue;
+extern tCanvasWidget g_sLuxMaxValue;
+
+extern tCanvasWidget g_sEngineCanvas;
+
+
+extern void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext);
+
+// Panel 2 - Plotting
+extern tCanvasWidget g_sCanvas2;
+extern tCanvasWidget g_sCanvas3;
+
+extern tCheckBoxWidget g_sPlotModeCheckBox;
+extern tCheckBoxWidget g_sPlotModeCheckBox2;
+extern tCheckBoxWidget g_sPlotModeCheckBox3;
+extern tCheckBoxWidget g_sPlotModeCheckBox4;
+extern tCheckBoxWidget g_sPlotModeCheckBox5;
+extern tCheckBoxWidget g_sPlotModeCheckBox6;
+tCanvasWidget g_sCanvas1;
+
+extern volatile uint8_t  g_ui8Hours, g_ui8Minutes, g_ui8Seconds;
+extern volatile uint8_t  g_ui8Day, g_ui8Month;
+extern volatile uint16_t g_ui16Year;
+extern volatile int16_t  g_i16MotorValue;
+extern uint16_t g_ui32Speed;
+// Bottom Navigation
+tPushButtonWidget g_sPrevious;
+tCanvasWidget g_sTitle;
+tPushButtonWidget g_sNext;
+extern char *g_pcPanei32Names[];
+
+// ====================== Globals (EXTERN only) ======================
+extern uint32_t g_ui32Panel;
+uint32_t g_ui32ButtonState;
+extern tContext sContext;
+
+extern bool g_bDisplayHold;
+
+// Plot mode
+typedef enum
+{
+    PLOT_MODE_FILTERED_ONLY = 0,
+    PLOT_MODE_RAW_AND_FILTERED
+} PlotMode_t;
+
+// ====================== Motor State ======================
+typedef enum
+{
+    MOTOR_IDLE = 0,
+    MOTOR_STARTING,
+    MOTOR_RUNNING,
+    MOTOR_FAULT
+} MotorState_t;
+
+tCanvasWidget g_sDashboard;
+tPushButtonWidget g_sStartButton;
+tPushButtonWidget g_psSideButtons[5];
+
+// Widget callbacks
+void OnIntroPaint(tWidget *psWidget, tContext *psContext);
+void OnCanvasPaint(tWidget *psWidget, tContext *psContext);
+void OnCheckChange(tWidget *psWidget, uint32_t bSelected);
+void OnButtonPress(tWidget *psWidget);
+void OnSliderChange(tWidget *psWidget, int32_t i32Value);
+void OnPlotModeChange(tWidget *psWidget, uint32_t bSelected);
+void OnPlotModeChange2(tWidget *psWidget, uint32_t bSelected);
+void OnPlotModeChange3(tWidget *psWidget, uint32_t bSelected);
+void OnPlotModeChange4(tWidget *psWidget, uint32_t bSelected);
+void OnNext(tWidget *psWidget);
+void OnPrevious(tWidget *psWidget);
+void OnDashboardPaint(tWidget *psWidget, tContext *psContext);
+void OnStartButtonPress(tWidget *psWidget);
+void OnDashButtonPress(tWidget *psWidget);
+void OnFaultPanelPaint(tWidget *psWidget, tContext *psContext);
+void UpdateFaultPanel(void);
+void UpdateMotorStateCanvas(void);
+void SetMotorState(MotorState_t newState);
+void OnDashboardSliderChange(tWidget *psWidget, int32_t i32Value);
+void UpdateTime(void);
+
+// ====================== Motor & Fault Globals ======================
+
+extern uint32_t g_ui32ActiveFaults;
+extern uint32_t g_ui32ActiveWarnings;
+extern uint32_t g_ui32ActiveSafety;
+extern uint32_t g_ui32FilteredBodyAccel;
+extern uint32_t g_ui32CurrentDistance;
+// ====================== New Widgets (Dashboard) ======================
+tCanvasWidget g_sMotorStateCanvas;
+extern tCanvasWidget g_sFaultPanel;
+extern tSliderWidget g_sDashboardSlider;
+extern tCanvasWidget g_sTimeCanvas;
+extern tCanvasWidget g_sLightValCanvas;
+extern tCanvasWidget g_sLightValCanvas2;
+extern tCanvasWidget g_sAccelValueCanvas;
+extern tSliderWidget g_sCrashSlider;
+extern tCanvasWidget g_sDistanceCanvas;
+extern tSliderWidget g_sMinDistanceSlider;
+extern tCanvasWidget g_sCoolingStatusCanvas;
+
+extern uint32_t g_ui32CrashThreshold;
+extern uint32_t g_ui32MinSafeDistance;
+
+#endif // DISPLAY_WIDGETS_H
