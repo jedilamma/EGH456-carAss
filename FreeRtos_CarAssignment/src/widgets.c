@@ -9,10 +9,24 @@
 // ====================== Widget Definitions ======================
 // ====================== PANEL 1 - ENGINE (Clean Version) ======================
 
-Canvas(g_sEngineCanvas, g_psPanels + 1,0,0,
-&g_sKentec320x240x16_SSD2119, 30, 50, 260, 160, 
-CANVAS_STYLE_APP_DRAWN, 0, 0, 0, 0, 0, 0, OnEngineCanvasPaint);
+// ====================== PANEL 1 - ENGINE ======================
+Canvas(g_sEngineCanvas, g_psPanels + 1, 0, 0,
+       &g_sKentec320x240x16_SSD2119, 0, 24, 230, 160, 
+       CANVAS_STYLE_OUTLINE | CANVAS_STYLE_APP_DRAWN, 0, ClrGray, 
+       0, 0, 0, 0, OnEngineCanvasPaint);
 
+// ====================== ENGINE PANEL SLIDER (Vertical) ======================
+tSliderWidget g_sEngineSlider = SliderStruct(&g_sEngineCanvas, 
+                                             NULL,                  // Next sibling
+                                             0,                     // No children
+                                             &g_sKentec320x240x16_SSD2119,
+                                             25, 70, 135, 20,       // x, y, width, height → Vertical
+                                             0, 100, 50,            // min, max, initial value
+                                             (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | 
+                                              SL_STYLE_OUTLINE | SL_STYLE_TEXT | 
+                                              SL_STYLE_BACKG_TEXT),
+                                             ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
+                                             &g_sFontCm16, "50", 0, 0, OnEngineSliderChange);
 
 // Panel 2 - Plotting
 Canvas(g_sCanvas2, g_psPanels + 2, &g_sPlotModeCheckBox, 0,     // ← IMPORTANT: point to first child
@@ -118,35 +132,6 @@ tCanvasWidget g_psPanels[5] =
     CanvasStruct(0, 0, &g_sCanvas4, &g_sKentec320x240x16_SSD2119,
                  0, 24, 320, 240, CANVAS_STYLE_FILL, ClrBlack, 0, 0, 0, 0, 0, 0),
 };
-
-// // Bottom Navigation
-// RectangularButton(g_sPrevious, 0, 0, 0, &g_sKentec320x240x16_SSD2119,
-//                   0, 190, 50, 50, PB_STYLE_FILL, ClrBlack, ClrBlack, 0,
-//                   ClrSilver, &g_sFontCm20, "-", g_pui8Blue50x50,
-//                   g_pui8Blue50x50Press, 0, 0, OnPrevious);
-
-// Canvas(g_sTitle, 0, 0, 0, &g_sKentec320x240x16_SSD2119, 50, 190, 220, 50,
-//        CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE, 0, 0, ClrSilver,
-//        &g_sFontCm20, 0, 0, 0);
-
-// RectangularButton(g_sNext, 0, 0, 0, &g_sKentec320x240x16_SSD2119,
-//                   270, 190, 50, 50, PB_STYLE_IMG | PB_STYLE_TEXT, ClrBlack,
-//                   ClrBlack, 0, ClrSilver, &g_sFontCm20, "+",
-//                   g_pui8Blue50x50, g_pui8Blue50x50Press, 0, 0, OnNext);
-
-char *g_pcPanei32Names[] = {
-    "     Engine     ",
-    "     Inputs     ",
-    "     Plotting     ",
-};
-
-
-// ====================== NEW DASHBOARD PANEL (Panel 0) ======================
-
-// Main Dashboard Canvas
-// Canvas(g_sDashboard, g_psPanels, &g_sMotorStateCanvas, &g_sFaultPanel,
-//        &g_sKentec320x240x16_SSD2119, 0, 0,
-//        320, 240, CANVAS_STYLE_APP_DRAWN, 0, 0, 0, 0, 0, 0, OnDashboardPaint);
 
 Canvas(g_sDashboard, g_psPanels, &g_sDashboardSlider, &g_sFaultPanel,
        &g_sKentec320x240x16_SSD2119, 0, 0,
@@ -618,26 +603,53 @@ void OnDashboardSliderChange(tWidget *psWidget, int32_t i32Value)
 
 // ====================== SLIDER CALLBACK ======================
 
-
 void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext)
 {
-    //tRectangle sRect;
-    char speedtext[16];
-    //char timetext[16];
-    char temptext[16];
-
-    //GrImageDraw(psContext, g_pui8StartBtnImage, 110, 70);
+    tRectangle sRect;
+    char buf[32];
 
     // Background
-    // GrContextForegroundSet(psContext, ClrBlack);
-    // sRect.i16XMin = 0; sRect.i16YMin = 0;
-    // sRect.i16XMax = 319; sRect.i16YMax = 165;
-    // GrRectFill(psContext, &sRect);
+    GrContextForegroundSet(psContext, ClrBlack);
+    sRect.i16XMin = 0; sRect.i16YMin = 24;
+    sRect.i16XMax = 320; sRect.i16YMax = 160;
+    GrRectFill(psContext, &sRect);
 
-    // Top bar
-    // GrContextForegroundSet(psContext, ClrDarkBlue);
-    // sRect.i16YMax = 28;
-    // GrRectFill(psContext, &sRect);
-    
+    GrContextFontSet(psContext, &g_sFontCm16);
+    GrContextForegroundSet(psContext, ClrWhite);
+
+    // Live Values
+    usprintf(buf, "Accel: %3lu", g_ui32FilteredBodyAccel);
+    GrStringDraw(psContext, buf, -1, 70, 40, 0);
+
+    usprintf(buf, "Distance: %3lu cm", g_ui32CurrentDistance);
+    GrStringDraw(psContext, buf, -1, 70, 70, 0);
+
+    // usprintf(buf, "Temp: %2lu C", g_ui32EngineTemp);
+    // GrStringDraw(psContext, buf, -1, 70, 80, 0);
+
+    usprintf(buf, "Crash Th: %4lu", g_ui32CrashThreshold);
+    GrStringDraw(psContext, buf, -1, 70, 150, 0);
+
+    // Paint the slider (important!)
+    WidgetPaint((tWidget *)&g_sEngineSlider);
 }
 
+void OnEngineSliderChange(tWidget *psWidget, int32_t i32Value)
+{
+    static char pcSliderText[6];
+
+    if (psWidget == (tWidget *)&g_sEngineSlider)
+    {
+        usprintf(pcSliderText, "%3d", (int)i32Value);
+        SliderTextSet(&g_sEngineSlider, pcSliderText);
+
+        // Update the variable you want to control
+        g_ui32CrashThreshold = (uint32_t)i32Value * 10;   // Example scaling
+
+        // ONLY repaint when slider actually changes
+        if (g_ui32Panel == 1)
+        {
+            WidgetPaint((tWidget *)&g_sEngineCanvas);
+        }
+    }
+}

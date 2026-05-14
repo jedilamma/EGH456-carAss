@@ -272,6 +272,7 @@ static void prvOptTask(void *pvParameters)
 
     for (;;)
     {
+        // high resultion timer function
         tStart = *(volatile uint32_t *)0xE0001004;
         success = sensorOpt3001Read(&rawData);
         tEnd = *(volatile uint32_t *)0xE0001004;
@@ -304,12 +305,12 @@ static void prvOptTask(void *pvParameters)
             // Calculate average
             filt_avg10 = sum / 10;
 
-            xMsgObj.id   = 1U;
-            xMsgObj.val  = convertedLux;
-            xMsgObj.avg  = filt_avg10;
-            xMsgObj.tick = sampleCount;
+            xMsgObj.id   = 1U; // device sending identifier
+            xMsgObj.val  = convertedLux;        // Value for unfiltered  data
+            xMsgObj.avg  = filt_avg10;          // Value for filtered  data
+            xMsgObj.tick = sampleCount;         // leave blank
             xMsgObj.flag = 0;
-            xMsgObj.seq  = avgTime_us;
+            xMsgObj.seq  = avgTime_us;          // leave blank
 
             // === Threshold Events ===
             if (filt_avg10 > g_ui32LuxMaxThreshold)
@@ -368,7 +369,7 @@ void prvDisplayTask(void *pvParameters)
 
     // === Add Checkboxes for Graph Panels ===
     // Panel 2    
-    WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sPlotModeCheckBox);
+    WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sPlotModeCheckBox); 
     WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sPlotModeCheckBox2);
 
     // Panel 3
@@ -384,6 +385,7 @@ void prvDisplayTask(void *pvParameters)
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultPanel);  
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sStartButton);
 
+    WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sEngineSlider);
 
     // Add permanent side buttons to root (do this only once)
     for (int i = 0; i < 5; i++)
@@ -624,11 +626,11 @@ static void prvFaultSimulatorTask(void *pvParameters)
         else if (g_ui32EngineTemp < g_ui32CoolingThreshold)
             g_bCoolingOn = false;
 
-        // Update Engine Panel live values
-        if (g_ui32Panel == 1)
-        {
-            WidgetPaint((tWidget *)&g_sEngineCanvas);
-        }
+        // // Update Engine Panel live values
+        // if (g_ui32Panel == 1)
+        // {
+        //     WidgetPaint((tWidget *)&g_sEngineCanvas);
+        // }
 
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(4000));  // Every 4 seconds
     }

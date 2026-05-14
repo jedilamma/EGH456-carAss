@@ -23,9 +23,9 @@ extern tCanvasWidget g_sLuxMinValue;
 extern tCanvasWidget g_sLuxMaxValue;
 
 extern tCanvasWidget g_sEngineCanvas;
-
-
+void OnEngineSliderChange(tWidget *psWidget, int32_t i32Value);
 extern void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext);
+extern tSliderWidget g_sEngineSlider;
 
 // Panel 2 - Plotting
 extern tCanvasWidget g_sCanvas2;
