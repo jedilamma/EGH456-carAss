@@ -26,8 +26,10 @@
 // ----------------------- Exported prototypes -----------------------
 extern bool writeI2C(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *Data);
 extern bool readI2C(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *Data);
-extern bool writeI2C_Polling(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *Data);
-extern bool readI2C_Polling(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *Data);
+//extern bool writeI2C_Polling(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *Data);
+//extern bool readI2C_Polling(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *Data);
+extern bool readBurstI2C(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *data, uint8_t len);
+
 /* Call this once after I2CMasterInitExpClk() */
 extern void i2cOptDriverInit(void);
 

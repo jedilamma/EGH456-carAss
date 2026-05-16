@@ -23,9 +23,19 @@ extern tCanvasWidget g_sLuxMinValue;
 extern tCanvasWidget g_sLuxMaxValue;
 
 extern tCanvasWidget g_sEngineCanvas;
-void OnEngineSliderChange(tWidget *psWidget, int32_t i32Value);
 extern void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext);
-extern tSliderWidget g_sEngineSlider;
+
+void OnCrashTolSliderChange(tWidget *psWidget, int32_t i32Value);
+extern tSliderWidget g_sCrashTolSlider;
+
+void OnAccelMaxSliderChange(tWidget *psWidget, int32_t i32Value);
+extern tSliderWidget g_sAccelMaxSlider;
+
+void OnDetRangeSliderChange(tWidget *psWidget, int32_t i32Value);
+extern tSliderWidget g_sDetRangeSlider;
+
+void OnLuxMinSliderChange(tWidget *psWidget, int32_t i32Value);
+extern tSliderWidget g_sLuxMinSlider;
 
 // Panel 2 - Plotting
 extern tCanvasWidget g_sCanvas2;
@@ -55,13 +65,17 @@ extern uint32_t g_ui32Panel;
 uint32_t g_ui32ButtonState;
 extern tContext sContext;
 
+extern bool g_bOPTDisplayHold;
+extern bool g_bIMUDisplayHold;
 extern bool g_bDisplayHold;
 
 // Plot mode
 typedef enum
 {
-    PLOT_MODE_FILTERED_ONLY = 0,
-    PLOT_MODE_RAW_AND_FILTERED
+    OPT_PLOT_MODE_FILTERED_ONLY = 0,
+    OPT_PLOT_MODE_RAW_AND_FILTERED,
+    IMU_PLOT_MODE_FILTERED_ONLY,
+    IMU_PLOT_MODE_RAW_AND_FILTERED
 } PlotMode_t;
 
 // ====================== Motor State ======================
@@ -79,14 +93,23 @@ tPushButtonWidget g_psSideButtons[5];
 
 // Widget callbacks
 void OnIntroPaint(tWidget *psWidget, tContext *psContext);
+
+void OnOPTCanvasPaint(tWidget *psWidget, tContext *psContext);
+void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext);
 void OnCanvasPaint(tWidget *psWidget, tContext *psContext);
+
 void OnCheckChange(tWidget *psWidget, uint32_t bSelected);
 void OnButtonPress(tWidget *psWidget);
 void OnSliderChange(tWidget *psWidget, int32_t i32Value);
-void OnPlotModeChange(tWidget *psWidget, uint32_t bSelected);
-void OnPlotModeChange2(tWidget *psWidget, uint32_t bSelected);
+
+void OnOPTPlotModeChange(tWidget *psWidget, uint32_t bSelected);
+void OnIMUPlotModeChange(tWidget *psWidget, uint32_t bSelected);
+void OnOPTPlotModeChange2(tWidget *psWidget, uint32_t bSelected);
+void OnIMUPlotModeChange2(tWidget *psWidget, uint32_t bSelected);
+
 void OnPlotModeChange3(tWidget *psWidget, uint32_t bSelected);
 void OnPlotModeChange4(tWidget *psWidget, uint32_t bSelected);
+
 void OnNext(tWidget *psWidget);
 void OnPrevious(tWidget *psWidget);
 void OnDashboardPaint(tWidget *psWidget, tContext *psContext);
@@ -119,7 +142,10 @@ extern tCanvasWidget g_sDistanceCanvas;
 extern tSliderWidget g_sMinDistanceSlider;
 extern tCanvasWidget g_sCoolingStatusCanvas;
 
+extern uint32_t g_ui32LuxMinThreshold;
 extern uint32_t g_ui32CrashThreshold;
 extern uint32_t g_ui32MinSafeDistance;
+extern uint32_t g_ui32AccelMaxVal;
+extern uint32_t g_ui32DetRangeVal;
 
 #endif // DISPLAY_WIDGETS_H

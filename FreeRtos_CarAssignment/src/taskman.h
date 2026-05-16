@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include <stdarg.h>
 #include <stdlib.h>
-
+#include <math.h>
 // Hardware includes
 #include "inc/hw_ints.h"
 #include "inc/hw_memmap.h"
@@ -27,6 +27,8 @@
 #include "drivers/Kentec320x240x16_ssd2119_spi.h"
 #include "drivers/touch.h"
 #include "drivers/opt3001.h"
+#include "drivers/bmi160.h"
+
 #include "inc/hw_nvic.h"
 #include "inc/hw_sysctl.h"
 #include "inc/hw_types.h"
@@ -41,7 +43,6 @@
 #include "driverlib/sysctl.h"
 #include "driverlib/pin_map.h"
 #include "driverlib/i2c.h"
-
 
 /* Kernel includes */
 #include "FreeRTOS.h"
@@ -76,7 +77,6 @@ uint32_t g_ui32Panel;
 tContext sContext;
 
 
-
 bool g_bCoolingOn; // cooling status
 
 extern SemaphoreHandle_t xButtonSemaphore1;
@@ -86,12 +86,19 @@ extern EventGroupHandle_t xEventGroup;
 
 // Plotting
 #define PLOT_HISTORY_SIZE 30
-extern uint32_t g_plotRawHistory[PLOT_HISTORY_SIZE];
-extern uint32_t g_plotFiltHistory[PLOT_HISTORY_SIZE];
-extern uint32_t g_plotIndex;
+extern uint32_t g_plotIMURawHistory[PLOT_HISTORY_SIZE];
+extern uint32_t g_plotIMUFiltHistory[PLOT_HISTORY_SIZE];
+extern uint32_t g_plotIMUIndex;
+
+#define PLOT_HISTORY_SIZE 30
+extern uint32_t g_plotOPTRawHistory[PLOT_HISTORY_SIZE];
+extern uint32_t g_plotOPTFiltHistory[PLOT_HISTORY_SIZE];
+extern uint32_t g_plotOPTIndex;
 
 // Motor & Plot Mode
 extern volatile MotorState_t g_eMotorState;
+extern PlotMode_t g_eOPTPlotMode;
+extern PlotMode_t g_eIMUPlotMode;
 extern PlotMode_t g_ePlotMode;
 
 // ====================== FAULT / WARNING DEFINES (MOVED HERE) ======================
@@ -118,10 +125,10 @@ extern uint32_t g_ui32ActiveSafety;
 #define EVENT_ALL_BITS           (0xFFU)
 
 // ====================== QUEUE + TASK PRIORITIES ======================
-#define mainQUEUE_LENGTH                    ( 8U )
+#define mainQUEUE_LENGTH                    ( 30U )
 #define mainQUEUE_SEND_TICKS_TO_WAIT        ( 0U )
-#define mainQUEUE_RECEIVE_TICKS_TO_WAIT     ( 10U )
-#define mainRECEIVER_DELAY_MS               ( 10U )
+#define mainQUEUE_RECEIVE_TICKS_TO_WAIT     ( 1U )
+#define mainRECEIVER_DELAY_MS               ( 100U )
 #define mainQUEUE_SEND_TASK_PRIORITY        ( tskIDLE_PRIORITY + 1U )
 #define mainQUEUE_RECEIVE_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2U )
 
@@ -134,6 +141,11 @@ void prvSetMotorSpeed();
 extern bool sensorOpt3001Init(void);
 extern bool sensorOpt3001Read(uint16_t *rawData);
 extern void sensorOpt3001Convert(uint16_t rawData, float *convertedLux);
+
+extern bool sensorBMI160Init(void);
+extern bool sensorBMI160ReadAccel(bmi160_accel_raw_t *raw);
+extern void sensorBMI160ConvertAccel(const bmi160_accel_raw_t *raw, bmi160_accel_float_t *g);
+
 extern void i2cOptDriverInit(void);
 extern void calcTimeCount(void);
 extern void SetTimeFromCompileTime(void);

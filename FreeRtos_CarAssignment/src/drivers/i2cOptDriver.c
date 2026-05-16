@@ -189,4 +189,25 @@ bool readI2C(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *data)
     return false;
 }
 
+bool readBurstI2C(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *data, uint8_t len)
+{
+    if (I2CSemaphore == NULL || g_eI2CState != I2C_IDLE || len == 0)
+        return false;
 
+    g_bI2CError = false;
+    g_ui8I2CSlaveAddr = ui8Addr;
+    g_pui8I2CData     = data;
+    g_eI2CState       = I2C_READ_REG_SEND;
+
+    I2CMasterSlaveAddrSet(I2C0_BASE, ui8Addr, false);
+    I2CMasterDataPut(I2C0_BASE, ui8Reg);
+    I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_SINGLE_SEND);
+
+    if (xSemaphoreTake(I2CSemaphore, pdMS_TO_TICKS(100)) == pdPASS)
+    {
+        return !g_bI2CError;
+    }
+
+    g_eI2CState = I2C_IDLE;
+    return false;
+}
