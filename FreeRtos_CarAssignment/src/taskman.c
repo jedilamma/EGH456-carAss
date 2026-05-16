@@ -22,7 +22,7 @@ uint32_t g_ui32ActiveWarnings = 0;
 uint32_t g_ui32ActiveSafety = 0;
 // ====================== NEW ENGINE / SAFETY / LUX GLOBALS ======================
 uint32_t g_ui32FilteredBodyAccel     = 420;   // live filtered acceleration
-uint32_t g_ui32CrashThreshold        = 750;   // configurable crash limit
+uint32_t g_ui32CrashThreshold        = 2500;   // configurable crash limit
 uint32_t g_ui32CurrentDistance       = 180;   // live distance to object (cm)
 uint32_t g_ui32DetRangeVal           = 90;    // configurable safe distance
 uint32_t g_ui32LuxMinThreshold       = 10;    // low lux trigger
@@ -276,7 +276,7 @@ static void readerTask(void *pvParameters)
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(mainRECEIVER_DELAY_MS));
+        vTaskDelay(pdMS_TO_TICKS(mainRECEIVER_DELAY_MS*10));
     }
 }
 
@@ -284,55 +284,56 @@ static void readerTask(void *pvParameters)
 // ====================== BMI160 IMU Accelerometer TASK ======================
 static void prvIMUTask(void *pvParameters)
 {
-    TickType_t xLastWakeTime = xTaskGetTickCount();
+    TickType_t xLastWakeTime;
     bmi160_accel_raw_t raw = {0};
-    int32_t accel_x_mg = 0, accel_y_mg = 0, accel_z_mg = 0;
+    bmi160_accel_float_t g = {0};
+    int32_t accel_x_mg, accel_y_mg, accel_z_mg;
     uint32_t magnitude_mg = 0;
 
     SafeUARTprintf("=== BMI160 IMU Task Started ===\r\n");
+    vTaskDelay(pdMS_TO_TICKS(500));
 
+    // === Initialise sensor once ===
     if (!sensorBMI160Init())
     {
-        SafeUARTprintf("BMI160 INIT FAILED!\r\n");
-        vTaskDelete(NULL);
+        SafeUARTprintf("!!! BMI160 INIT FAILED - Task stopping !!!\r\n");
+        g_ui32ActiveFaults |= FAULT_SENSOR;        // signal fault to system
+        vTaskDelete(NULL);                         // kill this task
+        return;
     }
 
-    SafeUARTprintf("BMI160 Initialized OK - Running in integer mode\r\n");
+    SafeUARTprintf(">>> BMI160 READY - Starting normal operation <<<\r\n");
+
+    xLastWakeTime = xTaskGetTickCount();
 
     for (;;)
     {
         if (sensorBMI160ReadAccel(&raw))
         {
-            // Convert raw to milli-g (±2g range → 16384 LSB/g)
-            accel_x_mg = (int32_t)raw.x * 1000 / 16384;
-            accel_y_mg = (int32_t)raw.y * 1000 / 16384;
-            accel_z_mg = (int32_t)raw.z * 1000 / 16384;
+            // Convert raw data using correct ±4g scaling
+            sensorBMI160ConvertAccel(&raw, &g);
 
-            // Simple integer magnitude
-            magnitude_mg = (uint32_t)sqrtf((float)(accel_x_mg*accel_x_mg + 
-                                                   accel_y_mg*accel_y_mg + 
+            // Convert to mg (milli-g) for the rest of the system
+            accel_x_mg = (int32_t)(g.x * 1000.0f);
+            accel_y_mg = (int32_t)(g.y * 1000.0f);
+            accel_z_mg = (int32_t)(g.z * 1000.0f);
+
+            // Magnitude (used by E-STOP / crash detection)
+            magnitude_mg = (uint32_t)sqrtf((float)(accel_x_mg*accel_x_mg +
+                                                   accel_y_mg*accel_y_mg +
                                                    accel_z_mg*accel_z_mg));
 
-            g_ui32FilteredBodyAccel = magnitude_mg;   // Used for E-STOP
+            g_ui32FilteredBodyAccel = magnitude_mg;
 
-            SafeUARTprintf("IMU -> X=%6d Y=%6d Z=%6d | Mag=%u mg\r\n",
-                           raw.x, raw.y, raw.z, (unsigned int)magnitude_mg);
-
-            // Send to queue
+            // Send to queue for display / reader task
             struct MsgObj xMsgObj = {0};
-            xMsgObj.id   = 2U;
-            xMsgObj.val  = (uint32_t)accel_x_mg;      // X axis in mg
-            xMsgObj.avg  = magnitude_mg;              // Magnitude in mg
+            xMsgObj.id   = 2U;                    // IMU sensor ID
+            xMsgObj.val  = (uint32_t)accel_x_mg;  // raw X in mg
+            xMsgObj.avg  = magnitude_mg;          // filtered magnitude
             xMsgObj.flag = 0;
-
             xQueueSend(xQueue, &xMsgObj, 0);
         }
-        else
-        {
-            SafeUARTprintf("IMU Read FAILED\r\n");
-        }
-
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100));
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));   // 50 Hz
     }
 }
 
@@ -561,6 +562,7 @@ void prvConfigureOPT(void)
     SafeUARTprintf("I2C0 and OPT3001 driver initialized (hardware only).\n");
 
 }
+
 
 static void prvConfigureButton( void )
 {
