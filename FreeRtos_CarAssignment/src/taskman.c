@@ -1,4 +1,5 @@
 #include "taskman.h"
+#include "temp_humidity.h"
 
 // Hardware drivers for buttons and LEDs
 static void prvOptTask(void *pvParameters);
@@ -7,6 +8,7 @@ static void readerTask(void *pvParameters);
 static void prvDisplayTask(void *pvParameters);
 static void prvMotorTask(void *pvParameters);
 static void prvFaultSimulatorTask(void *pvParameters);
+static void prvSHT31Task(void *pvParameters);
 
 static void prvConfigureLED(void);
 static void prvConfigureButton(void);
@@ -56,6 +58,7 @@ void vCreateTask(void)
     
     xTaskCreate(prvLEDTasksw1,   "LED",    configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(prvOptTask,      "OPT",    configMINIMAL_STACK_SIZE*2, NULL, tskIDLE_PRIORITY + 2, NULL);    
+    xTaskCreate(prvSHT31Task,    "SHT31",    configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(prvDisplayTask,  "DISPLAY",  configMINIMAL_STACK_SIZE*20, NULL, tskIDLE_PRIORITY + 3, NULL);
     xTaskCreate(prvFaultSimulatorTask, "FAULTSIM", configMINIMAL_STACK_SIZE*1, NULL, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(prvMotorTask,    "MOTOR",  configMINIMAL_STACK_SIZE*4, NULL, tskIDLE_PRIORITY + 2, NULL);
@@ -87,6 +90,65 @@ void prvLEDTasksw1(void *pvParameters)
             if (!uiIndex)  LEDWrite(LED_D1, LED_D1);
             if (!uiIndex_2) LEDWrite(LED_D2, LED_D2);
         }
+    }
+}
+
+static void prvSHT31Task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    TempHumiditySample_t sample;
+
+    SafeUARTprintf("=== SHT31 Task Started ===\r\n");
+    SafeUARTprintf("SHT31 route: %s\r\n", SHT31_GetPinRouteDescription());
+
+    TempHumidity_Init(g_ui32SysClock);
+
+    if (SHT31_IsDetected())
+    {
+        SafeUARTprintf("SHT31 detected at I2C address 0x%02x\r\n",
+                       (unsigned int)SHT31_GetI2CAddress());
+    }
+    else
+    {
+        SafeUARTprintf("SHT31 not detected during init\r\n");
+    }
+
+    for (;;)
+    {
+        TempHumidity_Update();
+
+        if (TempHumidity_GetLatest(&sample))
+        {
+            int32_t temp_x100 = (int32_t)(sample.filtered_temperature_c * 100.0f);
+            uint32_t hum_x100 = (uint32_t)(sample.filtered_humidity_rh * 100.0f);
+
+            const char *temp_sign = "";
+
+            if (temp_x100 < 0)
+            {
+                temp_sign = "-";
+                temp_x100 = -temp_x100;
+            }
+
+            SafeUARTprintf("SHT31 temp=%s%u.%02u C humidity=%u.%02u RH rawT=%u rawH=%u\r\n",
+                           temp_sign,
+                           (unsigned int)(temp_x100 / 100),
+                           (unsigned int)(temp_x100 % 100),
+                           (unsigned int)(hum_x100 / 100),
+                           (unsigned int)(hum_x100 % 100),
+                           (unsigned int)sample.raw_temperature_counts,
+                           (unsigned int)sample.raw_humidity_counts);
+        }
+        else
+        {
+            TempHumidity_GetLatest(&sample);
+
+            SafeUARTprintf("SHT31 read failed: %s\r\n",
+                           SHT31_StatusToString(sample.status));
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
