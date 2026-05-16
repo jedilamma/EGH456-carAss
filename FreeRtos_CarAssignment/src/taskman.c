@@ -340,7 +340,7 @@ static void prvOptTask(void *pvParameters)
         // Signal that new data is ready
         xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);  // reuse or create separate if needed
         
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(50));
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200));
     }
 }
 
