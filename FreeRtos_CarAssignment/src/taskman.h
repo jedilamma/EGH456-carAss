@@ -1,7 +1,8 @@
 #ifndef OPTFTOS_TASKMAN_H
 #define OPTFTOS_TASKMAN_H
 #define SENSOR_ID_OPT3001     1U
-#define SENSOR_ID_SHT31       2U
+#define SENSOR_ID_SHT31       3U
+#define SENSOR_ID_IMU         2U
 
 // Standard includes
 #include <stdio.h>
