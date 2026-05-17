@@ -9,6 +9,11 @@ static void prvDisplayTask(void *pvParameters);
 static void prvMotorTask(void *pvParameters);
 static void prvFaultSimulatorTask(void *pvParameters);
 static void prvIMUTask(void *pvParameters);
+static void prvSHT31Task(void *pvParameters);
+
+static uint32_t UpdateLuxAverage(uint32_t newLux);
+static int32_t FloatToX100(float value);
+static uint32_t FloatToUX100(float value);
 
 static void prvConfigureLED(void);
 static void prvConfigureButton(void);
@@ -48,9 +53,72 @@ uint32_t g_plotIMUFiltHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotIMUIndex = 0;
 
 PlotMode_t g_eOPTPlotMode = OPT_PLOT_MODE_FILTERED_ONLY;
-PlotMode_t g_ePIMUlotMode = IMU_PLOT_MODE_FILTERED_ONLY;
+PlotMode_t g_eIMUPlotMode = IMU_PLOT_MODE_FILTERED_ONLY;
 PlotMode_t g_ePlotMode = IMU_PLOT_MODE_FILTERED_ONLY;
 volatile MotorState_t g_eMotorState = MOTOR_IDLE;
+
+#define OPT_AVG_WINDOW 10
+
+static uint32_t luxBuffer[OPT_AVG_WINDOW] = {0};
+static uint32_t luxSum = 0;
+static uint8_t luxIndex = 0;
+static uint8_t luxCount = 0;
+
+bool g_bHeatingOn = false;
+bool g_bCoolingOn = false;
+bool g_bSHT31Valid = false;
+
+int32_t  g_i32CabinTempCx100 = 0;
+uint32_t g_ui32CabinHumidityRHx100 = 0;
+
+int32_t  g_i32HeatingThresholdCx100 = 1800;
+int32_t  g_i32CoolingThresholdCx100 = 2600;
+
+static uint32_t UpdateLuxAverage(uint32_t newLux)
+{
+    if (luxCount < OPT_AVG_WINDOW)
+    {
+        luxBuffer[luxIndex] = newLux;
+        luxSum += newLux;
+        luxCount++;
+    }
+    else
+    {
+        luxSum -= luxBuffer[luxIndex];
+        luxBuffer[luxIndex] = newLux;
+        luxSum += newLux;
+    }
+
+    luxIndex++;
+    if (luxIndex >= OPT_AVG_WINDOW)
+    {
+        luxIndex = 0;
+    }
+
+    return luxSum / luxCount;
+}
+
+static int32_t FloatToX100(float value)
+{
+    if (value >= 0.0f)
+    {
+        return (int32_t)((value * 100.0f) + 0.5f);
+    }
+    else
+    {
+        return (int32_t)((value * 100.0f) - 0.5f);
+    }
+}
+
+static uint32_t FloatToUX100(float value)
+{
+    if (value <= 0.0f)
+    {
+        return 0U;
+    }
+
+    return (uint32_t)((value * 100.0f) + 0.5f);
+}
 
 
 bool g_bOPTDisplayHold = false;
@@ -194,9 +262,9 @@ void xButtonsHandler(void)
 static void readerTask(void *pvParameters)
 {
     struct MsgObj xCurrentMsgObj;
-    struct MsgObj LatestSensorData[3];
+    struct MsgObj LatestSensorData[4];
 
-    for(int i = 0; i < 3; i++)
+    for(int i = 0; i < 4; i++)
     {
         LatestSensorData[i].id   = 0;
         LatestSensorData[i].val  = 0;
@@ -217,14 +285,17 @@ static void readerTask(void *pvParameters)
     {
         /* Wait for events */
         EventBits_t uxBits = xEventGroupWaitBits(xEventGroup,
-                                     (EVENT_SENSOR_MISSED | 
-                                      EVENT_QUEUE_FULL | 
-                                      EVENT_HIGH_THRESHOLD | 
-                                      EVENT_LOW_THRESHOLD | 
-                                      EVENT_BTN_TOGGLE_PLOT | 
-                                      EVENT_DISPLAY_HOLD |
-                                      EVENT_MOTOR_STATE_CHANGE),
-                                     pdTRUE, pdFALSE, pdMS_TO_TICKS(100));
+                             (EVENT_SENSOR_MISSED |
+                              EVENT_QUEUE_FULL |
+                              EVENT_HIGH_THRESHOLD |
+                              EVENT_LOW_THRESHOLD |
+                              EVENT_BTN_TOGGLE_PLOT |
+                              EVENT_SENSOR_DATA_READY |
+                              EVENT_DISPLAY_HOLD |
+                              EVENT_MOTOR_STATE_CHANGE),
+                             pdTRUE,
+                             pdFALSE,
+                             pdMS_TO_TICKS(100));
 
         
         if (uxBits & EVENT_MOTOR_STATE_CHANGE)
@@ -276,7 +347,7 @@ static void readerTask(void *pvParameters)
                 messagesProcessed++;
 
                 /* Update latest data for this sensor ID */
-                if (xCurrentMsgObj.id < 3)
+                if (xCurrentMsgObj.id < SENSOR_ID_SHT31)
                 {
                     LatestSensorData[xCurrentMsgObj.id] = xCurrentMsgObj;
                 }
@@ -288,7 +359,7 @@ static void readerTask(void *pvParameters)
         }
 
         /* === Now process the latest data we kept === */
-        for (uint8_t id = 1; id < 3; id++)
+        for (uint8_t id = 1; id < SENSOR_ID_SHT31; id++)
         {
             if (LatestSensorData[id].id == 0) continue;   // no data yet
 
@@ -303,7 +374,7 @@ static void readerTask(void *pvParameters)
             //===  Data - Process === 
             switch (pData->id)
             {
-                case 1U:        // Optical Sensor
+                case SENSOR_ID_OPT3001:        // Optical Sensor
                     SafeUARTprintf("OPT  -> val=%u avg=%u  Disc:%u  Miss:%u\r\n",
                                    (unsigned int)pData->val,
                                    (unsigned int)pData->avg,
@@ -321,7 +392,7 @@ static void readerTask(void *pvParameters)
                     }
                     break;
 
-                case 2U:        // IMU Sensor
+                case SENSOR_ID_IMU:        // IMU Sensor
                     SafeUARTprintf("IMU  -> val=%u avg=%u  Disc:%u\r\n",
                                    (unsigned int)pData->val,
                                    (unsigned int)pData->avg,
@@ -337,7 +408,55 @@ static void readerTask(void *pvParameters)
                             WidgetPaint((tWidget *)&g_sCanvas3);
                     }
                     break;
+                case SENSOR_ID_SHT31:
+                    {
+                        int32_t temp_x100 = (int32_t)pData->avg;
+                        uint32_t hum_x100 = (uint32_t)pData->avg2;
 
+                        g_i32CabinTempCx100 = temp_x100;
+                        g_ui32CabinHumidityRHx100 = hum_x100;
+                        g_bSHT31Valid = true;
+                        g_ui32ActiveFaults &= ~FAULT_SENSOR;
+
+                        if (g_i32CabinTempCx100 >= g_i32CoolingThresholdCx100)
+                        {
+                            g_bCoolingOn = true;
+                            g_bHeatingOn = false;
+                            g_ui32ActiveWarnings |= WARNING_HIGH_TEMP;
+                        }
+                        else if (g_i32CabinTempCx100 <= g_i32HeatingThresholdCx100)
+                        {
+                            g_bHeatingOn = true;
+                            g_bCoolingOn = false;
+                            g_ui32ActiveWarnings &= ~WARNING_HIGH_TEMP;
+                        }
+                        else
+                        {
+                            g_bHeatingOn = false;
+                            g_bCoolingOn = false;
+                            g_ui32ActiveWarnings &= ~WARNING_HIGH_TEMP;
+                        }
+
+                        SafeUARTprintf("SHT31 temp:%u.%02u C hum:%u.%02u RH cooling:%u heating:%u\r\n",
+                                    (unsigned int)((uint32_t)temp_x100 / 100U),
+                                    (unsigned int)((uint32_t)temp_x100 % 100U),
+                                    (unsigned int)(hum_x100 / 100U),
+                                    (unsigned int)(hum_x100 % 100U),
+                                    (unsigned int)g_bCoolingOn,
+                                    (unsigned int)g_bHeatingOn);
+
+                        if (g_ui32Panel == 1)
+                        {
+                            WidgetPaint((tWidget *)&g_sEngineCanvas);
+                        }
+
+                        if (g_ui32Panel == 0)
+                        {
+                            UpdateFaultPanel();
+                        }
+
+                        break;
+                    }
                 default:
                     break;
             }
