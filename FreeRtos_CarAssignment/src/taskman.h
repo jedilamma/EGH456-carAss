@@ -1,6 +1,11 @@
 #ifndef OPTFTOS_TASKMAN_H
 #define OPTFTOS_TASKMAN_H
 
+// Define sensor IDs to reduce dependency on magic numbers
+#define SENSOR_ID_OPT3001 1U // Optical Sensor (OPT3001)
+#define SENSOR_ID_IMU 2U // Accelerometer/Magnetometer (BMI160)
+#define SENSOR_ID_SHT31 3U // Temperature/Humidity Sensor (SHT31)
+
 // Standard includes
 #include <stdio.h>
 #include <stdint.h>
@@ -63,6 +68,9 @@ struct MsgObj
     uint32_t tick;
     uint8_t  flag;
     uint32_t seq;
+
+    int32_t val2;
+    int32_t avg2;
 };
 
 // ====================== Globals - EXTERN ONLY ======================
