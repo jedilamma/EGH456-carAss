@@ -176,10 +176,11 @@ static void prvIMUTask(void *pvParameters)
             if (sensorBMI160ReadAccel(&raw))
             {
                 // Do almost nothing - just send raw values
-                
+                int16_t rawAvg = isqrt(raw.x*raw.x+raw.y*raw.y+raw.z*raw.z);
+
                 msg.id   = 2U;
                 msg.val  = raw.x;      // raw LSB values
-                msg.avg  = raw.y;
+                msg.avg  = rawAvg;
                 msg.flag = 0;
                 xQueueSend(xQueue, &msg, 0);                
             }
