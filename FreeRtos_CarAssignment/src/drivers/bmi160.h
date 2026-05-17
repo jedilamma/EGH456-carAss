@@ -5,18 +5,22 @@
 extern "C" {
 #endif
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #define BMI160_I2C_ADDRESS      0x69
 
 /* Registers */
-#define BMI160_REG_CHIP_ID      0x00
 #define BMI160_REG_ACCEL_X_L    0x12
+#define BMI160_REG_ACC_CONF     0x40
+#define BMI160_REG_ACC_RANGE    0x41
+#define BMI160_REG_PMU_STATUS   0x03
 #define BMI160_REG_CMD          0x7E
 
 /* Commands */
-#define BMI160_CMD_SOFTRESET        0xB6
-#define BMI160_CMD_ACCEL_NORMAL     0x11
+#define BMI160_CMD_SOFTRESET    0xB6
+#define BMI160_CMD_ACCEL_NORMAL 0x11
 
-/* Data structure */
 typedef struct {
     int16_t x;
     int16_t y;

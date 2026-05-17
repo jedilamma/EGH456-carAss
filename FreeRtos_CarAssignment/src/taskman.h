@@ -28,6 +28,7 @@
 #include "drivers/touch.h"
 #include "drivers/opt3001.h"
 #include "drivers/bmi160.h"
+#include "drivers/i2cOptDriver.h"
 
 #include "inc/hw_nvic.h"
 #include "inc/hw_sysctl.h"
