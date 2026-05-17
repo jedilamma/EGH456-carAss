@@ -94,6 +94,8 @@ uint32_t g_ui32SysClock;
 SemaphoreHandle_t xButtonSemaphore1 = NULL;
 SemaphoreHandle_t xOptSemaphore = NULL;
 SemaphoreHandle_t xPrintMutex = NULL;
+ SemaphoreHandle_t xI2CMutex = NULL ;
+
 /* Set up the clock and pin configurations to run this example. */
 static void prvSetupHardware( void );
 
@@ -115,8 +117,9 @@ int main( void )
     xButtonSemaphore1 = xSemaphoreCreateBinary();    
     xOptSemaphore = xSemaphoreCreateBinary();
     xPrintMutex = xSemaphoreCreateMutex();
-    
-    if ( xButtonSemaphore1 != NULL || xOptSemaphore != NULL)
+    xI2CMutex = xSemaphoreCreateMutex();
+
+    if ( xButtonSemaphore1 != NULL || xOptSemaphore != NULL || xPrintMutex != NULL)
     {
         /* Configure application specific hardware and initialize the task thread. */
         vCreateTask();

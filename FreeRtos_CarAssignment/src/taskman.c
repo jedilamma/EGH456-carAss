@@ -51,7 +51,6 @@ PlotMode_t g_ePIMUlotMode = IMU_PLOT_MODE_FILTERED_ONLY;
 PlotMode_t g_ePlotMode = IMU_PLOT_MODE_FILTERED_ONLY;
 volatile MotorState_t g_eMotorState = MOTOR_IDLE;
 
-
 bool g_bOPTDisplayHold = false;
 bool g_bIMUDisplayHold = false;
 bool g_bDisplayHold = false;
@@ -62,16 +61,15 @@ void vCreateTask(void)
     prvConfigureButton();
     prvConfigureOPT();
     prvConfigure();   
-    prvConfigureHWTimer();                  // Queue + Event Group
+    prvConfigureHWTimer();                  
     SetTimeFromCompileTime();
     
-    xTaskCreate(prvLEDTasksw1,   "LED",    configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(prvIMUTask,      "IMU",    configMINIMAL_STACK_SIZE*3, NULL, tskIDLE_PRIORITY + 2, NULL); 
-    xTaskCreate(prvOptTask,      "OPT",    configMINIMAL_STACK_SIZE*2, NULL, tskIDLE_PRIORITY + 2, NULL);    
-    xTaskCreate(prvDisplayTask,  "DISPLAY",  configMINIMAL_STACK_SIZE*20, NULL, tskIDLE_PRIORITY + 3, NULL);
-    xTaskCreate(prvFaultSimulatorTask, "FAULTSIM", configMINIMAL_STACK_SIZE*1, NULL, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(prvMotorTask,    "MOTOR",  configMINIMAL_STACK_SIZE*4, NULL, tskIDLE_PRIORITY + 2, NULL);
-    
+    xTaskCreate(prvLEDTasksw1,      "LED",     configMINIMAL_STACK_SIZE * 2, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(prvIMUTask,         "IMU",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL); 
+    xTaskCreate(prvOptTask,         "OPT",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL);    
+    xTaskCreate(prvDisplayTask,     "DISPLAY", configMINIMAL_STACK_SIZE * 12, NULL, tskIDLE_PRIORITY + 3, NULL);  // biggest
+    xTaskCreate(prvFaultSimulatorTask, "FAULTSIM", configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(prvMotorTask,       "MOTOR",   configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
 
     SafeUARTprintf("All tasks created successfully!\r\n");
     SafeUARTprintf("Free Heap AFTER tasks: %u bytes\r\n", xPortGetFreeHeapSize());
@@ -122,218 +120,72 @@ void xButtonsHandler(void)
 
 static void readerTask(void *pvParameters)
 {
-    struct MsgObj xCurrentMsgObj;
-    struct MsgObj LatestSensorData[3];
+    struct MsgObj msg;
+    SafeUARTprintf("Reader Task Started (simple raw queue processing)\r\n");
 
-    for(int i = 0; i < 3; i++)
+    for (;;)
     {
-        LatestSensorData[i].id   = 0;
-        LatestSensorData[i].val  = 0;
-        LatestSensorData[i].avg  = 0;
-        LatestSensorData[i].tick = 0;
-        LatestSensorData[i].flag = 0;
-        LatestSensorData[i].seq  = 0;
-    }
-
-    uint32_t totalMessagesDiscarded = 0;
-    uint16_t missingSampleCount = 0;
-
-    (void) pvParameters;
-
-    SafeUARTprintf("Reader Task Started - Draining queue, keeping latest per sensor...\r\n");
-
-    for( ;; )
-    {
-        /* Wait for events */
-        EventBits_t uxBits = xEventGroupWaitBits(xEventGroup,
-                                     (EVENT_SENSOR_MISSED | 
-                                      EVENT_QUEUE_FULL | 
-                                      EVENT_HIGH_THRESHOLD | 
-                                      EVENT_LOW_THRESHOLD | 
-                                      EVENT_BTN_TOGGLE_PLOT | 
-                                      EVENT_DISPLAY_HOLD |
-                                      EVENT_MOTOR_STATE_CHANGE),
-                                     pdTRUE, pdFALSE, pdMS_TO_TICKS(100));
-
-        
-        if (uxBits & EVENT_MOTOR_STATE_CHANGE)
+        /* Wait for a message (blocks up to 100 ms) */
+        if (xQueueReceive(xQueue, &msg, pdMS_TO_TICKS(100)) == pdPASS)
         {
-            SafeUARTprintf("EVENT: Motor state changed -> %d\r\n", g_eMotorState);
-            
-            // Example automatic fault linking
-            if (g_eMotorState == MOTOR_FAULT)
-                g_ui32ActiveFaults |= FAULT_EBRAKE;
+            /* Raw processing - just print what we received */
+            if (msg.id == 1)
+            {
+                SafeUARTprintf("OPT  -> val=%u  avg=%u\r\n", 
+                               (unsigned int)msg.val, 
+                               (unsigned int)msg.avg);
+            }
+            else if (msg.id == 2)
+            {
+                SafeUARTprintf("IMU  -> X=%d  Mag=%u mg\r\n", 
+                               (int)msg.val, 
+                               (unsigned int)msg.avg);
+            }
             else
-                g_ui32ActiveFaults &= ~FAULT_EBRAKE;
-        }
-
-        if (uxBits & EVENT_QUEUE_FULL)
-        {
-            SafeUARTprintf("EVENT: QUEUE FULL! Message dropped.\r\n");
-        }
-
-        if (uxBits & EVENT_HIGH_THRESHOLD)
-        {
-            SafeUARTprintf("EVENT: HIGH THRESHOLD crossed! (Filtered > 1000 lux)\r\n");
-        }
-
-        if (uxBits & EVENT_LOW_THRESHOLD)
-        {
-            SafeUARTprintf("EVENT: LOW THRESHOLD crossed! (Filtered < 10 lux)\r\n");
-        }
-
-        // if (uxBits & EVENT_BTN_TOGGLE_PLOT)
-        // {
-        //     SafeUARTprintf("EVENT: Plot mode toggled -> %s\r\n", 
-        //                   (g_ePlotMode == PLOT_MODE_RAW_AND_FILTERED) ? 
-        //                   "Raw + Filtered" : "Filtered Only");
-        // }
-
-        if (uxBits & EVENT_DISPLAY_HOLD)
-        {
-            SafeUARTprintf("EVENT: Display Hold mode %s\r\n",
-                          g_bOPTDisplayHold ? "ACTIVATED" : "DEACTIVATED");
-            SafeUARTprintf("EVENT: Display Hold mode %s\r\n",
-                          g_bIMUDisplayHold ? "ACTIVATED" : "DEACTIVATED");
-        }
-
-        /* === Drain the entire queue and keep only the newest per ID === */
-        totalMessagesDiscarded = 0;
-        uint32_t messagesProcessed = 0;
-
-
-        while (uxQueueMessagesWaiting(xQueue) > 0)
-        {
-            if (xQueueReceive(xQueue, &xCurrentMsgObj, 0) == pdPASS)
             {
-                messagesProcessed++;
-
-                /* Update latest data for this sensor ID */
-                if (xCurrentMsgObj.id < 3)
-                {
-                    LatestSensorData[xCurrentMsgObj.id] = xCurrentMsgObj;
-                }
-
-                /* Count discarded messages */
-                if (messagesProcessed > 1)   // everything except the last one per ID is "discarded"
-                    totalMessagesDiscarded++;
+                SafeUARTprintf("Unknown msg id=%d\r\n", msg.id);
             }
         }
-
-        /* === Now process the latest data we kept === */
-        for (uint8_t id = 1; id < 3; id++)
-        {
-            if (LatestSensorData[id].id == 0) continue;   // no data yet
-
-            struct MsgObj *pData = &LatestSensorData[id];
-
-            if (pData->flag == 1)   // Bad / missed data
-            {
-                missingSampleCount++;
-                continue;
-            }
-
-            //===  Data - Process === 
-            switch (pData->id)
-            {
-                case 1U:        // Optical Sensor
-                    SafeUARTprintf("OPT  -> val=%u avg=%u  Disc:%u  Miss:%u\r\n",
-                                   (unsigned int)pData->val,
-                                   (unsigned int)pData->avg,
-                                   (unsigned int)totalMessagesDiscarded,
-                                   (unsigned int)missingSampleCount);
-
-                    if (!g_bOPTDisplayHold)
-                    {
-                        g_plotOPTRawHistory[g_plotOPTIndex]  = pData->val;
-                        g_plotOPTFiltHistory[g_plotOPTIndex] = pData->avg;
-                        g_plotOPTIndex = (g_plotOPTIndex + 1) % PLOT_HISTORY_SIZE;
-
-                        if (g_ui32Panel == 2)
-                            WidgetPaint((tWidget *)&g_sCanvas2);
-                    }
-                    break;
-
-                case 2U:        // IMU Sensor
-                    SafeUARTprintf("IMU  -> val=%u avg=%u  Disc:%u\r\n",
-                                   (unsigned int)pData->val,
-                                   (unsigned int)pData->avg,
-                                   (unsigned int)totalMessagesDiscarded);
-
-                    if (!g_bIMUDisplayHold)
-                    {
-                        g_plotIMURawHistory[g_plotIMUIndex]  = pData->val;
-                        g_plotIMUFiltHistory[g_plotIMUIndex] = pData->avg;
-                        g_plotIMUIndex = (g_plotIMUIndex + 1) % PLOT_HISTORY_SIZE;
-
-                        if (g_ui32Panel == 3)
-                            WidgetPaint((tWidget *)&g_sCanvas3);
-                    }
-                    break;
-
-                default:
-                    break;
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(mainRECEIVER_DELAY_MS*10));
     }
+    vTaskDelay(pdMS_TO_TICKS(50));
 }
 
-
-// ====================== BMI160 IMU Accelerometer TASK ======================
 static void prvIMUTask(void *pvParameters)
 {
     TickType_t xLastWakeTime;
     bmi160_accel_raw_t raw = {0};
-    bmi160_accel_float_t g = {0};
-    int32_t accel_x_mg, accel_y_mg, accel_z_mg;
-    uint32_t magnitude_mg = 0;
-
-    SafeUARTprintf("=== BMI160 IMU Task Started ===\r\n");
+    struct MsgObj msg;   
+    SafeUARTprintf("=== BMI160 IMU Task Started (minimal test) ===\r\n");
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    // === Initialise sensor once ===
-    if (!sensorBMI160Init())
+    if (!sensorBMI160Init())    
     {
         SafeUARTprintf("!!! BMI160 INIT FAILED - Task stopping !!!\r\n");
-        g_ui32ActiveFaults |= FAULT_SENSOR;        // signal fault to system
-        vTaskDelete(NULL);                         // kill this task
+        vTaskDelete(NULL);
         return;
     }
 
-    SafeUARTprintf(">>> BMI160 READY - Starting normal operation <<<\r\n");
+    SafeUARTprintf(">>> BMI160 READY - minimal test running <<<\r\n");
 
     xLastWakeTime = xTaskGetTickCount();
 
     for (;;)
     {
-        if (sensorBMI160ReadAccel(&raw))
+        if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(500)) == pdPASS)
         {
-            // Convert raw data using correct ±4g scaling
-            sensorBMI160ConvertAccel(&raw, &g);
-
-            // Convert to mg (milli-g) for the rest of the system
-            accel_x_mg = (int32_t)(g.x * 1000.0f);
-            accel_y_mg = (int32_t)(g.y * 1000.0f);
-            accel_z_mg = (int32_t)(g.z * 1000.0f);
-
-            // Magnitude (used by E-STOP / crash detection)
-            magnitude_mg = (uint32_t)sqrtf((float)(accel_x_mg*accel_x_mg +
-                                                   accel_y_mg*accel_y_mg +
-                                                   accel_z_mg*accel_z_mg));
-
-            g_ui32FilteredBodyAccel = magnitude_mg;
-
-            // Send to queue for display / reader task
-            struct MsgObj xMsgObj = {0};
-            xMsgObj.id   = 2U;                    // IMU sensor ID
-            xMsgObj.val  = (uint32_t)accel_x_mg;  // raw X in mg
-            xMsgObj.avg  = magnitude_mg;          // filtered magnitude
-            xMsgObj.flag = 0;
-            xQueueSend(xQueue, &xMsgObj, 0);
+            if (sensorBMI160ReadAccel(&raw))
+            {
+                // Do almost nothing - just send raw values
+                
+                msg.id   = 2U;
+                msg.val  = raw.x;      // raw LSB values
+                msg.avg  = raw.y;
+                msg.flag = 0;
+                xQueueSend(xQueue, &msg, 0);                
+            }
+            xSemaphoreGive(xI2CMutex);
         }
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));   // 50 Hz
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200));
     }
 }
 
@@ -346,7 +198,7 @@ static void prvOptTask(void *pvParameters)
     uint32_t avgTime_us = 0;
     uint16_t rawData = 0;
     float convertedLux = 0.0f;
-    bool success;
+    bool success = false;
 
     uint32_t filt_avg10 = 0;
 
@@ -364,16 +216,19 @@ static void prvOptTask(void *pvParameters)
 
     for (;;)
     {
-        // high resultion timer function
-        tStart = *(volatile uint32_t *)0xE0001004;
-        success = sensorOpt3001Read(&rawData);
-        tEnd = *(volatile uint32_t *)0xE0001004;
+        if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(500)) == pdPASS)
+        {   
+            // high resultion timer function
+            tStart = *(volatile uint32_t *)0xE0001004;
+            success = sensorOpt3001Read(&rawData);
+            tEnd = *(volatile uint32_t *)0xE0001004;
+            duration_us = (tEnd - tStart) / (g_ui32SysClock / 1000000UL);
 
-        duration_us = (tEnd - tStart) / (g_ui32SysClock / 1000000UL);
-
+            xSemaphoreGive(xI2CMutex);
+        }
+       
         if (success)
         {
-
             totalTime += duration_us;
             sampleCount++;
             avgTime_us = totalTime / sampleCount;
@@ -413,12 +268,14 @@ static void prvOptTask(void *pvParameters)
             } 
             else 
             {
+                
                 LEDWrite(LED_D1, 0);               // clear LED when above min
             }
 
         }
         else
-        {            
+        {         
+            success = false;   
             xMsgObj.id   = 1U;
             xMsgObj.flag = 1;
             xEventGroupSetBits(xEventGroup, EVENT_SENSOR_MISSED);            
@@ -516,14 +373,13 @@ static void prvConfigure(void)
         SafeUARTprintf("Event Group created successfully.\r\n");
     }
 
-    xTaskCreate(readerTask, "Reader", configMINIMAL_STACK_SIZE * 2, NULL,mainQUEUE_RECEIVE_TASK_PRIORITY, NULL);
+    xTaskCreate(readerTask, "Reader", configMINIMAL_STACK_SIZE * 10, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY , NULL);
 
 }
 
 static void prvConfigureLED( void )
 {
-    /* Configure initial LED state.  PinoutSet() has already configured
-     * LED I/O. */
+    /* Configure initial LED state.  PinoutSet() has already configured LED I/O. */
     LEDWrite(LED_D1, LED_D1);
 }
 

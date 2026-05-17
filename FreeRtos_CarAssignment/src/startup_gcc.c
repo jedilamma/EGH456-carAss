@@ -22,9 +22,13 @@
 //
 //*****************************************************************************
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "inc/hw_nvic.h"
 #include "inc/hw_types.h"
+#include "driverlib/interrupt.h"     
+#include "utils/uartstdio.h"   
+
 
 //*****************************************************************************
 //
@@ -228,8 +232,7 @@ extern uint32_t _ebss;
 //
 //*****************************************************************************
 void
-ResetISR(void)
-{
+ResetISR(void){
     uint32_t *pui32Src, *pui32Dest;
 
     //
@@ -299,15 +302,85 @@ NmiSR(void)
 // for examination by a debugger.
 //
 //*****************************************************************************
-static void
-FaultISR(void)
+// static void
+// FaultISR(void)
+// {
+//     //
+//     // Enter an infinite loop.
+//     //
+//     while(1)
+//     {
+//     }
+// }
+
+
+static void FaultISR(void)
 {
-    //
-    // Enter an infinite loop.
-    //
-    while(1)
-    {
+    uint32_t cfsr, hfsr, mmfar, bfar, stacked_pc, stacked_lr;
+
+    /* Disable interrupts while dumping */
+    IntMasterDisable();
+
+    UARTprintf("\r\n\r\n!!! HARD FAULT OCCURRED !!!\r\n\r\n");
+
+    // 1. Hard Fault Status Register
+    hfsr = HWREG(0xE000ED2C);
+    UARTprintf("HFSR  = 0x%08X\r\n", hfsr);
+    if (hfsr & (1U << 30)) UARTprintf("   -> FORCED (configurable fault escalated)\r\n");
+    if (hfsr & (1U << 1))  UARTprintf("   -> VECTTBL (vector table read fault)\r\n");
+
+    // 2. Configurable Fault Status Register (CFSR)
+    cfsr = HWREG(0xE000ED28);
+    UARTprintf("CFSR  = 0x%08X\r\n", cfsr);
+
+    // MemManage Fault Status (bits 0-7)
+    UARTprintf("MMFSR = 0x%02X  ", (cfsr & 0xFF));
+    if (cfsr & (1U << 7))  { UARTprintf("MMARVALID "); }
+    if (cfsr & (1U << 4))  { UARTprintf("MSTKERR "); }
+    if (cfsr & (1U << 3))  { UARTprintf("MUNSTKERR "); }
+    if (cfsr & (1U << 1))  { UARTprintf("DACCVIOL "); }
+    if (cfsr & (1U << 0))  { UARTprintf("IACCVIOL "); }
+    UARTprintf("\r\n");
+
+    // Bus Fault Status (bits 8-15)
+    UARTprintf("BFSR  = 0x%02X  ", ((cfsr >> 8) & 0xFF));
+    if (cfsr & (1U << 15)) { UARTprintf("BFARVALID "); }
+    if (cfsr & (1U << 12)) { UARTprintf("IMPRECISERR "); }
+    if (cfsr & (1U << 11)) { UARTprintf("PRECISERR "); }
+    if (cfsr & (1U << 10)) { UARTprintf("IBUSERR "); }
+    if (cfsr & (1U << 9))  { UARTprintf("UNSTKERR "); }
+    if (cfsr & (1U << 8))  { UARTprintf("STKERR "); }
+    UARTprintf("\r\n");
+
+    // Usage Fault Status (bits 16-23)
+    UARTprintf("UFSR  = 0x%04X  ", ((cfsr >> 16) & 0xFFFF));
+    if (cfsr & (1U << 18)) { UARTprintf("DIVBYZERO "); }
+    if (cfsr & (1U << 17)) { UARTprintf("UNALIGNED "); }
+    if (cfsr & (1U << 16)) { UARTprintf("UNDEFINSTR "); }
+    if (cfsr & (1U << 19)) { UARTprintf("INVSTATE "); }
+    if (cfsr & (1U << 20)) { UARTprintf("INVPC "); }
+    UARTprintf("\r\n");
+
+    // 3. Fault Address Registers
+    if (cfsr & (1U << 7)) {                // MMARVALID
+        mmfar = HWREG(0xE000ED34);
+        UARTprintf("MMFAR = 0x%08X  (MemManage fault address)\r\n", mmfar);
     }
+    if (cfsr & (1U << 15)) {               // BFARVALID
+        bfar = HWREG(0xE000ED38);
+        UARTprintf("BFAR  = 0x%08X  (Bus fault address)\r\n", bfar);
+    }
+
+    // 4. Stacked registers (what was on the stack when fault occurred)
+    stacked_pc = HWREG(0xE000ED38 + 4);   // rough estimate
+    stacked_lr = HWREG(0xE000ED38 + 8);
+    UARTprintf("Stacked PC = 0x%08X\r\n", stacked_pc);
+    UARTprintf("Stacked LR = 0x%08X\r\n", stacked_lr);
+
+    UARTprintf("\r\n!!! END OF FAULT DUMP - SYSTEM HALTED !!!\r\n\r\n");
+
+    /* Infinite loop - you can attach debugger here */
+    while(1);
 }
 
 //*****************************************************************************

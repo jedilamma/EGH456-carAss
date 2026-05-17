@@ -11,30 +11,22 @@ bool sensorBMI160Init(void)
 {
     uint8_t cmd, pmu;
 
-    // Soft reset
     cmd = BMI160_CMD_SOFTRESET;
     writeI2C_Polling(bmi160_addr, BMI160_REG_CMD, &cmd);
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    // Set Normal mode
     cmd = BMI160_CMD_ACCEL_NORMAL;
     writeI2C_Polling(bmi160_addr, BMI160_REG_CMD, &cmd);
     vTaskDelay(pdMS_TO_TICKS(80));
 
-    // Configure accelerometer (±4g, 100 Hz)
-    cmd = 0x08;                                 // ±4g range
-    cmd = 0x08;                                 // ±4g range
+    cmd = 0x08;                     // ±8g (less sensitive)
     writeI2C_Polling(bmi160_addr, BMI160_REG_ACC_RANGE, &cmd);
 
-    cmd = 0x28;                                 // 100 Hz, normal filter
+    cmd = 0x28;
     writeI2C_Polling(bmi160_addr, BMI160_REG_ACC_CONF, &cmd);
 
-    // Quick verify
     readI2C_Polling(bmi160_addr, BMI160_REG_PMU_STATUS, &pmu);
-    if ((pmu & 0x30) != 0x10)
-        return false;   // failed
-
-    return true;
+    return ((pmu & 0x30) == 0x10);
 }
 
 bool sensorBMI160ReadAccel(bmi160_accel_raw_t *raw)
@@ -49,9 +41,10 @@ bool sensorBMI160ReadAccel(bmi160_accel_raw_t *raw)
     return true;
 }
 
-void sensorBMI160ConvertAccel(const bmi160_accel_raw_t *raw, bmi160_accel_float_t *g)
+void sensorBMI160ConvertAccel(const bmi160_accel_raw_t *raw, bmi160_accel_uint_t *g)
 {
-    g->x = raw->x / 8192.0f;   // ±4g scaling
-    g->y = raw->y / 8192.0f;
-    g->z = raw->z / 8192.0f;
+    // ±8g range = 4096 LSB/g
+    g->x = raw->x;
+    g->y = raw->y;
+    g->z = raw->z;
 }

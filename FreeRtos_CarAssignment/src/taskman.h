@@ -53,12 +53,12 @@
 #include "semphr.h"
 #include "driverlib/timer.h" 
 #include "widgets.h"
-
+#include "system_utils.h"
 // ====================== Message Object ======================
 struct MsgObj
 {
     uint8_t  id;
-    uint32_t val;
+    int32_t val;
     uint32_t avg;
     uint32_t tick;
     uint8_t  flag;
@@ -79,10 +79,11 @@ tContext sContext;
 
 
 bool g_bCoolingOn; // cooling status
+QueueHandle_t xQueue;
 
+extern SemaphoreHandle_t xI2CMutex;
 extern SemaphoreHandle_t xButtonSemaphore1;
 extern SemaphoreHandle_t xPrintMutex;
-QueueHandle_t xQueue;
 extern EventGroupHandle_t xEventGroup;
 
 // Plotting
@@ -129,7 +130,7 @@ extern uint32_t g_ui32ActiveSafety;
 #define mainQUEUE_LENGTH                    ( 30U )
 #define mainQUEUE_SEND_TICKS_TO_WAIT        ( 0U )
 #define mainQUEUE_RECEIVE_TICKS_TO_WAIT     ( 1U )
-#define mainRECEIVER_DELAY_MS               ( 100U )
+#define mainRECEIVER_DELAY_MS               ( 10U )
 #define mainQUEUE_SEND_TASK_PRIORITY        ( tskIDLE_PRIORITY + 1U )
 #define mainQUEUE_RECEIVE_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2U )
 
@@ -145,7 +146,7 @@ extern void sensorOpt3001Convert(uint16_t rawData, float *convertedLux);
 
 extern bool sensorBMI160Init(void);
 extern bool sensorBMI160ReadAccel(bmi160_accel_raw_t *raw);
-extern void sensorBMI160ConvertAccel(const bmi160_accel_raw_t *raw, bmi160_accel_float_t *g);
+extern void sensorBMI160ConvertAccel(const bmi160_accel_raw_t *raw, bmi160_accel_uint_t *g);
 
 extern void i2cOptDriverInit(void);
 extern void calcTimeCount(void);

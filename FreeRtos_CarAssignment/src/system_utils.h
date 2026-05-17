@@ -18,5 +18,6 @@ void EnableHighResTimer(void);
 void SafeUARTprintf(const char *pcString, ...);
 void SetTimeFromCompileTime(void);
 void calcTimeCount(void);
+uint32_t isqrt(uint32_t n);
 
 #endif // UTILS_H

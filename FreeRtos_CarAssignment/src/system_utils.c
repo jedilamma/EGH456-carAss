@@ -15,21 +15,38 @@ void EnableHighResTimer(void)
     *DWT_CTRL |= 0x00000001;
 }
 
+// ====================== SHARED PRINT BUFFER ======================
+char g_pcPrintBuffer[PRINT_BUFFER_SIZE];
+
+// Improved SafeUARTprintf using shared buffer + vsnprintf
 void SafeUARTprintf(const char *pcString, ...)
 {
     va_list vaArgP;
 
     if (xPrintMutex == NULL)
-        return;
-
-    if (xSemaphoreTake(xPrintMutex, pdMS_TO_TICKS(100)) == pdPASS)
     {
+        // Fallback if mutex not ready yet
+        UARTprintf("Print Mutex not ready!\r\n");
+        return;
+    }
+
+    // Take mutex - this protects the shared buffer
+    if (xSemaphoreTake(xPrintMutex, portMAX_DELAY) == pdPASS)
+    {
+        // Format into the shared buffer (much lighter than UARTvprintf)
         va_start(vaArgP, pcString);
-        UARTvprintf(pcString, vaArgP);
+        uvsnprintf(g_pcPrintBuffer, PRINT_BUFFER_SIZE, pcString, vaArgP);
         va_end(vaArgP);
+
+        // Now send the already-formatted string to UART
+        // This still uses some stack but far less than before
+        UARTprintf("%s", g_pcPrintBuffer);
+
         xSemaphoreGive(xPrintMutex);
     }
 }
+
+
 
 
 //=============================================================
@@ -103,4 +120,28 @@ void calcTimeCount(void)
             }
         }
     }
+}
+
+// Fast integer square root (for magnitude calculation)
+uint32_t isqrt(uint32_t n)
+{
+    uint32_t res = 0;
+    uint32_t bit = 1u << 30;        // start at highest power of 4 <= 2^31
+
+    while (bit > n) bit >>= 2;
+
+    while (bit != 0)
+    {
+        if (n >= res + bit)
+        {
+            n -= res + bit;
+            res = (res >> 1) + bit;
+        }
+        else
+        {
+            res >>= 1;
+        }
+        bit >>= 2;
+    }
+    return res;
 }
