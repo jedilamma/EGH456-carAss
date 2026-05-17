@@ -45,6 +45,67 @@ uint32_t g_plotIndex = 0;
 PlotMode_t g_ePlotMode = PLOT_MODE_FILTERED_ONLY;
 volatile MotorState_t g_eMotorState = MOTOR_IDLE;
 
+#define OPT_AVG_WINDOW 10
+
+static uint32_t luxBuffer[OPT_AVG_WINDOW] = {0};
+static uint32_t luxSum = 0;
+static uint8_t luxIndex = 0;
+static uint8_t luxCount = 0;
+bool g_bHeatingOn = false;
+bool g_bCoolingOn = false;
+bool g_bSHT31Valid = false;
+
+int32_t  g_i32CabinTempCx100 = 0;
+uint32_t g_ui32CabinHumidityRHx100 = 0;
+
+int32_t  g_i32HeatingThresholdCx100 = 1800;
+int32_t  g_i32CoolingThresholdCx100 = 2600;
+
+static uint32_t UpdateLuxAverage(uint32_t newLux)
+{
+    if (luxCount < OPT_AVG_WINDOW)
+    {
+        luxBuffer[luxIndex] = newLux;
+        luxSum += newLux;
+        luxCount++;
+    }
+    else
+    {
+        luxSum -= luxBuffer[luxIndex];
+        luxBuffer[luxIndex] = newLux;
+        luxSum += newLux;
+    }
+
+    luxIndex++;
+    if (luxIndex >= OPT_AVG_WINDOW)
+    {
+        luxIndex = 0;
+    }
+
+    return luxSum / luxCount;    
+}
+
+static int32_t FloatToX100(float value)
+{
+    if (value >= 0.0f)
+    {
+        return (int32_t)((value * 100.0f) + 0.5f);
+    }
+    else
+    {
+        return (int32_t)((value * 100.0f) - 0.5f);
+    }
+}
+
+static uint32_t FloatToUX100(float value)
+{
+    if (value <= 0.0f)
+    {
+        return 0U;
+    }
+
+    return (uint32_t)((value * 100.0f) + 0.5f);
+}
 
 bool g_bDisplayHold = false;
 void vCreateTask(void)
@@ -98,6 +159,9 @@ static void prvSHT31Task(void *pvParameters)
     (void)pvParameters;
 
     TempHumiditySample_t sample;
+    struct MsgObj xMsgObj = {0};
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    uint32_t sampleCount = 0;
 
     SafeUARTprintf("=== SHT31 Task Started ===\r\n");
     SafeUARTprintf("SHT31 route: %s\r\n", SHT31_GetPinRouteDescription());
@@ -117,38 +181,45 @@ static void prvSHT31Task(void *pvParameters)
     for (;;)
     {
         TempHumidity_Update();
+        TempHumidity_GetLatest(&sample);
 
-        if (TempHumidity_GetLatest(&sample))
+        sampleCount++;
+
+        xMsgObj.id   = SENSOR_ID_SHT31;
+        xMsgObj.tick = sampleCount;
+        xMsgObj.seq  = (uint32_t)sample.status;
+
+        if (sample.valid)
         {
-            int32_t temp_x100 = (int32_t)(sample.filtered_temperature_c * 100.0f);
-            uint32_t hum_x100 = (uint32_t)(sample.filtered_humidity_rh * 100.0f);
+            int32_t rawTemp_x100  = FloatToX100(sample.raw_temperature_c);
+            int32_t filtTemp_x100 = FloatToX100(sample.filtered_temperature_c);
 
-            const char *temp_sign = "";
+            uint32_t rawHum_x100  = FloatToUX100(sample.raw_humidity_rh);
+            uint32_t filtHum_x100 = FloatToUX100(sample.filtered_humidity_rh);
 
-            if (temp_x100 < 0)
-            {
-                temp_sign = "-";
-                temp_x100 = -temp_x100;
-            }
-
-            SafeUARTprintf("SHT31 temp=%s%u.%02u C humidity=%u.%02u RH rawT=%u rawH=%u\r\n",
-                           temp_sign,
-                           (unsigned int)(temp_x100 / 100),
-                           (unsigned int)(temp_x100 % 100),
-                           (unsigned int)(hum_x100 / 100),
-                           (unsigned int)(hum_x100 % 100),
-                           (unsigned int)sample.raw_temperature_counts,
-                           (unsigned int)sample.raw_humidity_counts);
+            xMsgObj.val  = (uint32_t)rawTemp_x100;
+            xMsgObj.avg  = (uint32_t)filtTemp_x100;
+            xMsgObj.val2 = (int32_t)rawHum_x100;
+            xMsgObj.avg2 = (int32_t)filtHum_x100;
+            xMsgObj.flag = 0U;
         }
         else
         {
-            TempHumidity_GetLatest(&sample);
-
-            SafeUARTprintf("SHT31 read failed: %s\r\n",
-                           SHT31_StatusToString(sample.status));
+            xMsgObj.val  = 0U;
+            xMsgObj.avg  = 0U;
+            xMsgObj.val2 = 0;
+            xMsgObj.avg2 = 0;
+            xMsgObj.flag = 1U;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        if (xQueueSend(xQueue, &xMsgObj, 0) != pdPASS)
+        {
+            xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
+        }
+
+        xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY);
+
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1000));
     }
 }
 
@@ -175,8 +246,6 @@ static void readerTask( void *pvParameters )
     struct MsgObj xCurrentMsgObj;
     BaseType_t xRecvStatus;
     EventBits_t uxBits;
-    uint32_t messagesWaitingAtStart = 0;
-    uint32_t messagesDiscarded = 0;
     uint16_t missingSampleCount = 0;
 
     ( void ) pvParameters;
@@ -185,28 +254,31 @@ static void readerTask( void *pvParameters )
 
     for( ;; )
     {
-        /* Wait for any of the important events */
+        /* Wait for any important event, or timeout so queue still gets checked */
         uxBits = xEventGroupWaitBits(xEventGroup,
-                                     (EVENT_SENSOR_MISSED | 
-                                      EVENT_QUEUE_FULL | 
-                                      EVENT_HIGH_THRESHOLD | 
-                                      EVENT_LOW_THRESHOLD | 
-                                      EVENT_BTN_TOGGLE_PLOT | 
+                                     (EVENT_SENSOR_MISSED |
+                                      EVENT_QUEUE_FULL |
+                                      EVENT_HIGH_THRESHOLD |
+                                      EVENT_LOW_THRESHOLD |
+                                      EVENT_SENSOR_DATA_READY |
                                       EVENT_DISPLAY_HOLD |
                                       EVENT_MOTOR_STATE_CHANGE),
-                                     pdTRUE,           // Clear the bits after reading
-                                     pdFALSE,          // Any single bit is enough
-                                     pdMS_TO_TICKS(100)); // Timeout 100ms
+                                     pdTRUE,              // Clear bits after reading
+                                     pdFALSE,             // Any single bit is enough
+                                     pdMS_TO_TICKS(100)); // Timeout 100 ms
 
         if (uxBits & EVENT_MOTOR_STATE_CHANGE)
         {
             SafeUARTprintf("EVENT: Motor state changed -> %d\r\n", g_eMotorState);
-            
-            // Example automatic fault linking
+
             if (g_eMotorState == MOTOR_FAULT)
+            {
                 g_ui32ActiveFaults |= FAULT_EBRAKE;
+            }
             else
+            {
                 g_ui32ActiveFaults &= ~FAULT_EBRAKE;
+            }
         }
 
         if (uxBits & EVENT_QUEUE_FULL)
@@ -224,71 +296,38 @@ static void readerTask( void *pvParameters )
             SafeUARTprintf("EVENT: LOW THRESHOLD crossed! (Filtered < 10 lux)\r\n");
         }
 
-        // if (uxBits & EVENT_BTN_TOGGLE_PLOT)
-        // {
-        //     SafeUARTprintf("EVENT: Plot mode toggled -> %s\r\n", 
-        //                   (g_ePlotMode == PLOT_MODE_RAW_AND_FILTERED) ? 
-        //                   "Raw + Filtered" : "Filtered Only");
-        // }
-
         if (uxBits & EVENT_DISPLAY_HOLD)
         {
             SafeUARTprintf("EVENT: Display Hold mode %s\r\n",
-                          g_bDisplayHold ? "ACTIVATED" : "DEACTIVATED");
+                           g_bDisplayHold ? "ACTIVATED" : "DEACTIVATED");
         }
 
-        /* === Read Latest Message from Queue === */
-        messagesWaitingAtStart = uxQueueMessagesWaiting(xQueue);
-
+        /* Process all queued sensor messages */
         xRecvStatus = xQueueReceive(xQueue, &xCurrentMsgObj, 0);
 
-        if (xRecvStatus == pdPASS)
+        if (xRecvStatus != pdPASS)
         {
-            xCurrentMsgObj = xCurrentMsgObj;  // keep newest
-            messagesDiscarded = 0;
+            missingSampleCount++;
+        }
 
-            /* Drain queue to keep only the latest message */
-            while (uxQueueMessagesWaiting(xQueue) > 0)
+        while (xRecvStatus == pdPASS)
+        {
+            if ((xCurrentMsgObj.flag == 1U) &&
+                (xCurrentMsgObj.id == SENSOR_ID_OPT3001))
             {
-                if (xQueueReceive(xQueue, &xCurrentMsgObj, 0) == pdPASS)
-                {
-                    messagesDiscarded++;
-                }
-            }
-
-            /* ====================== FILTER BAD DATA ====================== */
-            if (xCurrentMsgObj.flag == 1 && xCurrentMsgObj.id == 1U)
-            {
-
-                // /* === Process Events === */
-                if (uxBits & EVENT_SENSOR_MISSED)
-                {
-                    //SafeUARTprintf("EVENT-SM: ");
-                }
-                
-                //SafeUARTprintf("OPTICAL Sensor\r\n");
                 missingSampleCount++;
-                // Do NOT update plot with bad data
             }
-            else
+            else if (xCurrentMsgObj.id == SENSOR_ID_OPT3001)
             {
-                /* === Good Data - Process Normally === */
-                SafeUARTprintf("RX xQueue id=0x%02x val=%u avg=%u seq=%u tick=%u flag=%u "
-                               "Miss:%u InQue:%u Disc:%u\r\n",
-                               (unsigned int)xCurrentMsgObj.id,
+                SafeUARTprintf("OPT3001 raw_lux:%u filt_lux:%u sample:%u read_us:%u\r\n",
                                (unsigned int)xCurrentMsgObj.val,
                                (unsigned int)xCurrentMsgObj.avg,
-                               (unsigned int)xCurrentMsgObj.seq,
                                (unsigned int)xCurrentMsgObj.tick,
-                               (unsigned int)xCurrentMsgObj.flag,
-                               missingSampleCount,
-                               messagesWaitingAtStart,
-                               messagesDiscarded);
+                               (unsigned int)xCurrentMsgObj.seq);
 
-                /* Update Plot Only if NOT in Display Hold Mode */
                 if (!g_bDisplayHold)
                 {
-                    g_plotRawHistory[g_plotIndex]  = xCurrentMsgObj.val;
+                    g_plotRawHistory[g_plotIndex] = xCurrentMsgObj.val;
                     g_plotFiltHistory[g_plotIndex] = xCurrentMsgObj.avg;
                     g_plotIndex = (g_plotIndex + 1) % PLOT_HISTORY_SIZE;
 
@@ -298,15 +337,74 @@ static void readerTask( void *pvParameters )
                     }
                 }
             }
+            else if (xCurrentMsgObj.id == SENSOR_ID_SHT31)
+            {
+                int32_t temp_x100 = (int32_t)xCurrentMsgObj.avg;
+                uint32_t hum_x100 = (uint32_t)xCurrentMsgObj.avg2;
+
+                g_i32CabinTempCx100 = temp_x100;
+                g_ui32CabinHumidityRHx100 = hum_x100;
+                g_bSHT31Valid = (xCurrentMsgObj.flag == 0U);
+
+                if (g_bSHT31Valid)
+                {
+                    g_ui32ActiveFaults &= ~FAULT_SENSOR;
+
+                    if (g_i32CabinTempCx100 >= g_i32CoolingThresholdCx100)
+                    {
+                        g_bCoolingOn = true;
+                        g_bHeatingOn = false;
+                        g_ui32ActiveWarnings |= WARNING_HIGH_TEMP;
+                    }
+                    else if (g_i32CabinTempCx100 <= g_i32HeatingThresholdCx100)
+                    {
+                        g_bHeatingOn = true;
+                        g_bCoolingOn = false;
+                        g_ui32ActiveWarnings &= ~WARNING_HIGH_TEMP;
+                    }
+                    else
+                    {
+                        g_bHeatingOn = false;
+                        g_bCoolingOn = false;
+                        g_ui32ActiveWarnings &= ~WARNING_HIGH_TEMP;
+                    }
+
+                    SafeUARTprintf("SHT31 temp:%u.%02u C hum:%u.%02u RH cooling:%u heating:%u\r\n",
+                                   (unsigned int)((uint32_t)temp_x100 / 100U),
+                                   (unsigned int)((uint32_t)temp_x100 % 100U),
+                                   (unsigned int)(hum_x100 / 100U),
+                                   (unsigned int)(hum_x100 % 100U),
+                                   (unsigned int)g_bCoolingOn,
+                                   (unsigned int)g_bHeatingOn);
+                }
+                else
+                {
+                    g_ui32ActiveFaults |= FAULT_SENSOR;
+                    g_bCoolingOn = false;
+                    g_bHeatingOn = false;
+
+                    SafeUARTprintf("SHT31 fault status:%u sample:%u\r\n",
+                                   (unsigned int)xCurrentMsgObj.seq,
+                                   (unsigned int)xCurrentMsgObj.tick);
+                }
+
+                if (g_ui32Panel == 1)
+                {
+                    WidgetPaint((tWidget *)&g_sEngineCanvas);
+                }
+
+                if (g_ui32Panel == 0)
+                {
+                    UpdateFaultPanel();
+                }
+            }
+
+            xRecvStatus = xQueueReceive(xQueue, &xCurrentMsgObj, 0);
         }
-        else
-        {
-            missingSampleCount++;
-        }
+
         vTaskDelay(pdMS_TO_TICKS(mainRECEIVER_DELAY_MS));
     }
 }
-
 
 static void prvOptTask(void *pvParameters)
 {
@@ -350,26 +448,12 @@ static void prvOptTask(void *pvParameters)
 
             sensorOpt3001Convert(rawData, &convertedLux);
             
-            static uint16_t val[10] = {0};
-            static uint8_t  idx = 0;
-            static uint32_t sum = 0;
+            uint32_t rawLux = (uint32_t)convertedLux;
+            filt_avg10 = UpdateLuxAverage(rawLux);
 
-            // Remove old value from sum
-            sum -= val[idx];
-
-            // Insert new value
-            val[idx] = (uint16_t)convertedLux;
-            sum += val[idx];
-
-            // Move index (circular buffer)
-            idx = (idx + 1) % 10;
-
-            // Calculate average
-            filt_avg10 = sum / 10;
-
-            xMsgObj.id   = 1U; // device sending identifier
-            xMsgObj.val  = convertedLux;        // Value for unfiltered  data
-            xMsgObj.avg  = filt_avg10;          // Value for filtered  data
+            xMsgObj.id   = SENSOR_ID_OPT3001;
+            xMsgObj.val  = rawLux;
+            xMsgObj.avg  = filt_avg10;
             xMsgObj.tick = sampleCount;         // leave blank
             xMsgObj.flag = 0;
             xMsgObj.seq  = avgTime_us;          // leave blank
@@ -400,7 +484,7 @@ static void prvOptTask(void *pvParameters)
             xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
         }
         // Signal that new data is ready
-        xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);  // reuse or create separate if needed
+        xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY);  // reuse or create separate if needed
         
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200));
     }

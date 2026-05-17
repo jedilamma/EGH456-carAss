@@ -1,5 +1,7 @@
 #ifndef OPTFTOS_TASKMAN_H
 #define OPTFTOS_TASKMAN_H
+#define SENSOR_ID_OPT3001     1U
+#define SENSOR_ID_SHT31       2U
 
 // Standard includes
 #include <stdio.h>
@@ -61,6 +63,9 @@ struct MsgObj
     uint32_t tick;
     uint8_t  flag;
     uint32_t seq;
+
+    int32_t  val2;
+    int32_t  avg2;
 };
 
 // ====================== Globals - EXTERN ONLY ======================
@@ -77,7 +82,7 @@ tContext sContext;
 
 
 
-bool g_bCoolingOn; // cooling status
+extern bool g_bCoolingOn; // cooling status
 
 extern SemaphoreHandle_t xButtonSemaphore1;
 extern SemaphoreHandle_t xPrintMutex;
@@ -115,10 +120,12 @@ extern uint32_t g_ui32ActiveSafety;
 #define EVENT_BTN_TOGGLE_PLOT    (1U << 4)
 #define EVENT_DISPLAY_HOLD       (1U << 5)
 #define EVENT_MOTOR_STATE_CHANGE (1U << 6)
+
+#define EVENT_SENSOR_DATA_READY  (1U << 7)
 #define EVENT_ALL_BITS           (0xFFU)
 
 // ====================== QUEUE + TASK PRIORITIES ======================
-#define mainQUEUE_LENGTH                    ( 8U )
+#define mainQUEUE_LENGTH                    ( 16U )
 #define mainQUEUE_SEND_TICKS_TO_WAIT        ( 0U )
 #define mainQUEUE_RECEIVE_TICKS_TO_WAIT     ( 10U )
 #define mainRECEIVER_DELAY_MS               ( 10U )
