@@ -16,20 +16,20 @@ bool sensorBMI160Init(void)
 
     // Soft Reset
     cmd = BMI160_CMD_SOFTRESET;
-    writeI2C(BMI160_I2C_ADDRESS, BMI160_REG_CMD, &cmd);
+    writeI2CByte(BMI160_I2C_ADDRESS, BMI160_REG_CMD, cmd);
     vTaskDelay(pdMS_TO_TICKS(250));
 
     // Set ±2g range FIRST
     cmd = 0x03;   // 0x03 = ±2g
-    writeI2C(BMI160_I2C_ADDRESS, 0x41, &cmd);   // ACC_RANGE
+    writeI2CByte(BMI160_I2C_ADDRESS, 0x41, cmd);   // ACC_RANGE
     vTaskDelay(pdMS_TO_TICKS(50));
 
     // Enable Normal Mode - Try TWICE (common workaround)
     cmd = 0x11;
-    writeI2C(BMI160_I2C_ADDRESS, BMI160_REG_CMD, &cmd);
+    writeI2CByte(BMI160_I2C_ADDRESS, BMI160_REG_CMD, cmd);
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    writeI2C(BMI160_I2C_ADDRESS, BMI160_REG_CMD, &cmd);  // Second write helps
+    writeI2CByte(BMI160_I2C_ADDRESS, BMI160_REG_CMD, cmd);  // Second write helps
     vTaskDelay(pdMS_TO_TICKS(150));
 
     // Check status
@@ -48,8 +48,10 @@ bool sensorBMI160ReadAccel(bmi160_accel_raw_t *raw)
 {
     uint8_t buf[6] = {0};
 
-    if (!readBurstI2C(BMI160_I2C_ADDRESS, BMI160_REG_ACCEL_X_L, buf, 6))
+    if (!readBurstI2CPolling(BMI160_I2C_ADDRESS, BMI160_REG_ACCEL_X_L, buf, 6))
+    {
         return false;
+    }
 
     raw->x = (int16_t)((buf[1] << 8) | buf[0]);
     raw->y = (int16_t)((buf[3] << 8) | buf[2]);

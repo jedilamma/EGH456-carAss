@@ -211,3 +211,119 @@ bool readBurstI2C(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *data, uint8_t len)
     g_eI2CState = I2C_IDLE;
     return false;
 }
+
+bool writeI2CByte(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t data)
+{
+    if (g_eI2CState != I2C_IDLE)
+    {
+        return false;
+    }
+
+    I2CMasterSlaveAddrSet(I2C0_BASE, ui8Addr, false);
+    I2CMasterDataPut(I2C0_BASE, ui8Reg);
+    I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_BURST_SEND_START);
+
+    while (I2CMasterBusy(I2C0_BASE))
+    {
+    }
+
+    if (I2CMasterErr(I2C0_BASE) != I2C_MASTER_ERR_NONE)
+    {
+        return false;
+    }
+
+    I2CMasterDataPut(I2C0_BASE, data);
+    I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_BURST_SEND_FINISH);
+
+    while (I2CMasterBusy(I2C0_BASE))
+    {
+    }
+
+    return (I2CMasterErr(I2C0_BASE) == I2C_MASTER_ERR_NONE);
+}
+
+bool readBurstI2CPolling(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *data, uint8_t len)
+{
+    uint8_t i;
+
+    if ((data == NULL) || (len == 0U) || (g_eI2CState != I2C_IDLE))
+    {
+        return false;
+    }
+
+    I2CMasterSlaveAddrSet(I2C0_BASE, ui8Addr, false);
+    I2CMasterDataPut(I2C0_BASE, ui8Reg);
+    I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_SINGLE_SEND);
+
+    while (I2CMasterBusy(I2C0_BASE))
+    {
+    }
+
+    if (I2CMasterErr(I2C0_BASE) != I2C_MASTER_ERR_NONE)
+    {
+        return false;
+    }
+
+    I2CMasterSlaveAddrSet(I2C0_BASE, ui8Addr, true);
+
+    if (len == 1U)
+    {
+        I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_SINGLE_RECEIVE);
+
+        while (I2CMasterBusy(I2C0_BASE))
+        {
+        }
+
+        if (I2CMasterErr(I2C0_BASE) != I2C_MASTER_ERR_NONE)
+        {
+            return false;
+        }
+
+        data[0] = I2CMasterDataGet(I2C0_BASE);
+        return true;
+    }
+
+    I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_BURST_RECEIVE_START);
+
+    while (I2CMasterBusy(I2C0_BASE))
+    {
+    }
+
+    if (I2CMasterErr(I2C0_BASE) != I2C_MASTER_ERR_NONE)
+    {
+        return false;
+    }
+
+    data[0] = I2CMasterDataGet(I2C0_BASE);
+
+    for (i = 1U; i < (len - 1U); i++)
+    {
+        I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_BURST_RECEIVE_CONT);
+
+        while (I2CMasterBusy(I2C0_BASE))
+        {
+        }
+
+        if (I2CMasterErr(I2C0_BASE) != I2C_MASTER_ERR_NONE)
+        {
+            return false;
+        }
+
+        data[i] = I2CMasterDataGet(I2C0_BASE);
+    }
+
+    I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_BURST_RECEIVE_FINISH);
+
+    while (I2CMasterBusy(I2C0_BASE))
+    {
+    }
+
+    if (I2CMasterErr(I2C0_BASE) != I2C_MASTER_ERR_NONE)
+    {
+        return false;
+    }
+
+    data[len - 1U] = I2CMasterDataGet(I2C0_BASE);
+
+    return true;
+}

@@ -56,6 +56,15 @@
 #include "driverlib/timer.h" 
 #include "widgets.h"
 
+extern bool g_bHeatingOn;
+extern bool g_bSHT31Valid;
+
+extern int32_t  g_i32CabinTempCx100;
+extern uint32_t g_ui32CabinHumidityRHx100;
+
+extern int32_t  g_i32HeatingThresholdCx100;
+extern int32_t  g_i32CoolingThresholdCx100;
+
 // ====================== Message Object ======================
 struct MsgObj
 {
@@ -96,7 +105,6 @@ extern uint32_t g_plotIMURawHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotIMUFiltHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotIMUIndex;
 
-#define PLOT_HISTORY_SIZE 30
 extern uint32_t g_plotOPTRawHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotOPTFiltHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotOPTIndex;

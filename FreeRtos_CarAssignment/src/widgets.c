@@ -5,6 +5,37 @@
 #include "drivers/Kentec320x240x16_ssd2119_spi.h"
 #include "utils/uartstdio.h"
 
+static void FormatSignedX100(char *buf, const char *label, int32_t value_x100, const char *unit)
+{
+    const char *sign = "";
+    uint32_t absValue;
+
+    if (value_x100 < 0)
+    {
+        sign = "-";
+        absValue = (uint32_t)(-value_x100);
+    }
+    else
+    {
+        absValue = (uint32_t)value_x100;
+    }
+
+    usprintf(buf, "%s%s%u.%02u %s",
+             label,
+             sign,
+             (unsigned int)(absValue / 100U),
+             (unsigned int)(absValue % 100U),
+             unit);
+}
+
+static void FormatUnsignedX100(char *buf, const char *label, uint32_t value_x100, const char *unit)
+{
+    usprintf(buf, "%s%u.%02u %s",
+             label,
+             (unsigned int)(value_x100 / 100U),
+             (unsigned int)(value_x100 % 100U),
+             unit);
+}
 
 // ====================== Widget Definitions ======================
 // ====================== PANEL 1 - ENGINE (Clean Version) ======================
@@ -416,7 +447,6 @@ void OnOPTCanvasPaint(tWidget *psWidget, tContext *psContext)
 // Global value for the speed / gauge
 // Temp hooks for later
 //uint32_t g_ui32Speed = 80;        
-uint32_t g_ui32Temp = 20;
 
 void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
 {
@@ -439,26 +469,36 @@ void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
     // GrRectFill(psContext, &sRect);
     
 
+    if (g_bSHT31Valid)
+    {
+        FormatSignedX100(temptext, "", g_i32CabinTempCx100, "C");
+    }
+    else
+    {
+        usprintf(temptext, "--.-- C");
+    }
+
     GrContextFontSet(psContext, &g_sFontCm20);
-    GrContextForegroundSet(psContext, ClrWhite);
-    
-    usprintf(temptext, "%d C", g_ui32Temp);
+
+    if (!g_bSHT31Valid)
+    {
+        GrContextForegroundSet(psContext, ClrRed);
+    }
+    else if (g_bCoolingOn)
+    {
+        GrContextForegroundSet(psContext, ClrCyan);
+    }
+    else if (g_bHeatingOn)
+    {
+        GrContextForegroundSet(psContext, ClrOrange);
+    }
+    else
+    {
+        GrContextForegroundSet(psContext, ClrWhite);
+    }
+
     GrStringDrawCentered(psContext, temptext, -1, 240, 20, 0);
-
-    // Big Speed Number
-    GrContextFontSet(psContext, &g_sFontCm34);
-    GrContextForegroundSet(psContext, ClrCyan);
-    usprintf(speedtext, "%d", g_ui32Speed);
-    GrStringDrawCentered(psContext, speedtext, -1, 60, 75, 1);
-
-    GrContextFontSet(psContext, &g_sFontCm16);
-    GrStringDraw(psContext, "Km/H", -1, 85, 75, 0);
-
-    UpdateMotorStateCanvas();
-    UpdateFaultPanel();
-
-    // Ensure slider is painted
-    WidgetPaint((tWidget *)&g_sDashboardSlider);
+    GrContextForegroundSet(psContext, ClrWhite);
     
 }
 
@@ -656,29 +696,62 @@ void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext)
 
     // Background
     GrContextForegroundSet(psContext, ClrBlack);
-    sRect.i16XMin = 0; sRect.i16YMin = 24;
-    sRect.i16XMax = 240; sRect.i16YMax = 260;
+    sRect.i16XMin = 0;
+    sRect.i16YMin = 24;
+    sRect.i16XMax = 240;
+    sRect.i16YMax = 260;
     GrRectFill(psContext, &sRect);
 
     GrContextFontSet(psContext, &g_sFontCm16);
     GrContextForegroundSet(psContext, ClrWhite);
 
-    // Live Values
-    usprintf(buf, "Max Engine Accel: %3d", g_ui32AccelMaxVal);
+    // Existing live values
+    usprintf(buf, "Max Accel: %3d", g_ui32AccelMaxVal);
     GrStringDraw(psContext, buf, -1, 40, 40, 0);
 
-    usprintf(buf, "Range Tr Dist: %3d cm", g_ui32DetRangeVal);
-    GrStringDraw(psContext, buf, -1, 40, 80, 0);
+    usprintf(buf, "Range Dist: %3d cm", g_ui32DetRangeVal);
+    GrStringDraw(psContext, buf, -1, 40, 70, 0);
 
-    // usprintf(buf, "Temp: %2lu C", g_ui32EngineTemp);
-    // GrStringDraw(psContext, buf, -1, 70, 80, 0);
+    usprintf(buf, "Crash Thresh: %3d", g_ui32CrashThreshold);
+    GrStringDraw(psContext, buf, -1, 40, 100, 0);
 
-    usprintf(buf, "Crash Threshold: %3d", g_ui32CrashThreshold);
-    GrStringDraw(psContext, buf, -1, 40, 120, 0);
+    usprintf(buf, "Min Lux Thresh: %3d", g_ui32LuxMinThreshold);
+    GrStringDraw(psContext, buf, -1, 40, 130, 0);
 
-    usprintf(buf, "Min Lux Threshold: %3d", g_ui32LuxMinThreshold);
-    GrStringDraw(psContext, buf, -1, 40, 180, 0);
+    // SHT31 temperature/humidity block
+    if (g_bSHT31Valid)
+    {
+        GrContextForegroundSet(psContext, ClrWhite);
 
+        FormatSignedX100(buf, "Cabin Temp: ", g_i32CabinTempCx100, "C");
+        GrStringDraw(psContext, buf, -1, 40, 160, 0);
+
+        FormatUnsignedX100(buf, "Humidity: ", g_ui32CabinHumidityRHx100, "%RH");
+        GrStringDraw(psContext, buf, -1, 40, 185, 0);
+
+        if (g_bCoolingOn)
+        {
+            GrContextForegroundSet(psContext, ClrCyan);
+            GrStringDraw(psContext, "Climate: Cooling", -1, 40, 210, 0);
+        }
+        else if (g_bHeatingOn)
+        {
+            GrContextForegroundSet(psContext, ClrOrange);
+            GrStringDraw(psContext, "Climate: Heating", -1, 40, 210, 0);
+        }
+        else
+        {
+            GrContextForegroundSet(psContext, ClrGreen);
+            GrStringDraw(psContext, "Climate: OK", -1, 40, 210, 0);
+        }
+    }
+    else
+    {
+        GrContextForegroundSet(psContext, ClrRed);
+        GrStringDraw(psContext, "SHT31: No Data", -1, 40, 160, 0);
+    }
+
+    GrContextForegroundSet(psContext, ClrWhite);
 }
 
 void OnCrashTolSliderChange(tWidget *psWidget, int32_t i32Value)

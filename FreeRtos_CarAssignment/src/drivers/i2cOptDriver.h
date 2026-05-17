@@ -9,11 +9,14 @@
 
 (Refactored for FreeRTOS interrupt-driven I2C)
 *************************************************************************************************/
-
+#include <stdbool.h>
+#include <stdint.h>
 
 
 #ifndef _I2COPTDRIVER_H_
 #define _I2COPTDRIVER_H_
+extern bool writeI2CByte(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t data);
+extern bool readBurstI2CPolling(uint8_t ui8Addr, uint8_t ui8Reg, uint8_t *data, uint8_t len);
 
 
 

@@ -452,34 +452,22 @@ static void readerTask(void *pvParameters)
                             g_bCoolingOn = false;
                             g_ui32ActiveWarnings &= ~WARNING_HIGH_TEMP;
                         }
-
-                        SafeUARTprintf("SHT31 -> temp=%u.%02u C hum=%u.%02u RH cooling=%u heating=%u\r\n",
-                                       (unsigned int)((uint32_t)temp_x100 / 100U),
-                                       (unsigned int)((uint32_t)temp_x100 % 100U),
-                                       (unsigned int)(hum_x100 / 100U),
-                                       (unsigned int)(hum_x100 % 100U),
-                                       (unsigned int)g_bCoolingOn,
-                                       (unsigned int)g_bHeatingOn);
                     }
                     else
                     {
                         g_ui32ActiveFaults |= FAULT_SENSOR;
                         g_bCoolingOn = false;
                         g_bHeatingOn = false;
+                    }
 
-                        SafeUARTprintf("SHT31 -> FAULT status=%u sample=%u\r\n",
-                                       (unsigned int)pData->seq,
-                                       (unsigned int)pData->tick);
+                    if (g_ui32Panel == 0)
+                    {
+                        WidgetPaint((tWidget *)&g_sDashboard);
                     }
 
                     if (g_ui32Panel == 1)
                     {
                         WidgetPaint((tWidget *)&g_sEngineCanvas);
-                    }
-
-                    if (g_ui32Panel == 0)
-                    {
-                        UpdateFaultPanel();
                     }
 
                     break;
