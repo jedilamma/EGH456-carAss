@@ -79,9 +79,14 @@ bool g_bSHT31Valid = false;
 int32_t  g_i32CabinTempCx100 = 0;
 uint32_t g_ui32CabinHumidityRHx100 = 0;
 
-// Demo thresholds for climate status
 int32_t  g_i32HeatingThresholdCx100 = 1800;
 int32_t  g_i32CoolingThresholdCx100 = 2600;
+
+uint16_t g_ui32Speed = 0;
+
+tContext sContext;
+
+QueueHandle_t xQueue = NULL;
 
 void vCreateTask(void)
 {
@@ -465,12 +470,20 @@ static void prvIMUTask(void *pvParameters)
             if (sensorBMI160ReadAccel(&raw))
             {
                 // Do almost nothing - just send raw values
-                
-                msg.id   = 2U;
+                msg.id   = SENSOR_ID_IMU; // Use defined sensor ID for IMU instead of magic number
                 msg.val  = raw.x;      // raw LSB values
                 msg.avg  = raw.y;
                 msg.flag = 0;
-                xQueueSend(xQueue, &msg, 0);                
+                if (xQueueSend(xQueue, &msg, 0) != pdPASS)
+                {
+                    // Report queue overflow if IMU cannot send.
+                    xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
+                }
+                else
+                {
+                    // Wake readerTask when IMU data is queued
+                    xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY);
+                }             
             }
             xSemaphoreGive(xI2CMutex);
         }
@@ -481,7 +494,7 @@ static void prvIMUTask(void *pvParameters)
 // ====================== OPT3001 Task ======================
 static uint32_t UpdateLuxAverage(uint32_t newLux)
 {
-    // Only divide by the number of valid samples during startup.
+    // Only divide by the number of valid samples during startup
     if (luxCount < OPT_AVG_WINDOW)
     {
         luxBuffer[luxIndex] = newLux;
@@ -506,7 +519,7 @@ static uint32_t UpdateLuxAverage(uint32_t newLux)
 
 static int32_t FloatToX100(float value)
 {
-    // Convert signed float to integer x100.
+    // Convert signed float to integer x100
     if (value >= 0.0f)
     {
         return (int32_t)((value * 100.0f) + 0.5f);
@@ -517,7 +530,7 @@ static int32_t FloatToX100(float value)
 
 static uint32_t FloatToUX100(float value)
 {
-    // Convert unsigned float to integer x100.
+    // Convert unsigned float to integer x100
     if (value <= 0.0f)
     {
         return 0U;
@@ -552,7 +565,9 @@ static void prvOptTask(void *pvParameters)
     struct MsgObj xMsgObj = {0};
 
     for (;;)
-    {
+    {    
+        success = false; // Reset success flag every loop to prevent queuing stale data
+
         if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(500)) == pdPASS)
         {   
             // high resultion timer function
@@ -572,20 +587,6 @@ static void prvOptTask(void *pvParameters)
 
             sensorOpt3001Convert(rawData, &convertedLux);
             
-            static uint16_t val[10] = {0};
-            static uint8_t  idx = 0;
-            static uint32_t sum = 0;
-
-            // Remove old value from sum
-            sum -= val[idx];
-
-            // Insert new value
-            val[idx] = (uint16_t)convertedLux;
-            sum += val[idx];
-
-            // Move index (circular buffer)
-            idx = (idx + 1) % 10;
-
             // Calculate average - now calculates average of available samples before > 10 samples are collected
             uint32_t rawLux = (uint32_t)convertedLux;
             filt_avg10 = UpdateLuxAverage(rawLux);
@@ -625,7 +626,7 @@ static void prvOptTask(void *pvParameters)
             xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
         }
         // Signal that new data is ready
-        xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);  // reuse or create separate if needed
+        xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY); // EVENT_BTN_TOGGLE_PLOT should mean button/plot mode, not new sensor data
         
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200));
     }
@@ -909,11 +910,14 @@ static void prvFaultSimulatorTask(void *pvParameters)
             SafeUARTprintf("!!! E-STOP TRIGGERED (Accel or Distance) !!!\r\n");
         }
 
-        // Heating / Cooling logic
+        // Heating / Cooling logic - Commented out since its now sensor-driven
+        
+        /*
         if (g_ui32EngineTemp > g_ui32HeatingThreshold)
             g_bCoolingOn = true;
         else if (g_ui32EngineTemp < g_ui32CoolingThreshold)
             g_bCoolingOn = false;
+        */
 
         // // Update Engine Panel live values
         // if (g_ui32Panel == 1)

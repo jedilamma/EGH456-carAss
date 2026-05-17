@@ -728,23 +728,21 @@ void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext)
     GrContextFontSet(psContext, &g_sFontCm16);
     GrContextForegroundSet(psContext, ClrWhite);
 
-    // Live Values
+    // Changed GUI element positions to prevent overlap
     usprintf(buf, "Max Engine Accel: %3d", g_ui32AccelMaxVal);
     GrStringDraw(psContext, buf, -1, 40, 40, 0);
 
     usprintf(buf, "Range Tr Dist: %3d cm", g_ui32DetRangeVal);
-    GrStringDraw(psContext, buf, -1, 40, 80, 0);
-
-    // usprintf(buf, "Temp: %2lu C", g_ui32EngineTemp);
-    // GrStringDraw(psContext, buf, -1, 70, 80, 0);
+    GrStringDraw(psContext, buf, -1, 40, 70, 0);
 
     usprintf(buf, "Crash Threshold: %3d", g_ui32CrashThreshold);
-    GrStringDraw(psContext, buf, -1, 40, 120, 0);
+    GrStringDraw(psContext, buf, -1, 40, 100, 0);
 
     usprintf(buf, "Min Lux Threshold: %3d", g_ui32LuxMinThreshold);
-    GrStringDraw(psContext, buf, -1, 40, 180, 0);
+    GrStringDraw(psContext, buf, -1, 40, 130, 0);
 
-    // Add SHT31 live cabin data to the input/status panel
+    // SHT31 values are placed below existing controls
+    // prevents humidity text overlapping with Min Lux Threshold
     if (g_bSHT31Valid)
     {
         GrContextForegroundSet(psContext, ClrWhite);
@@ -777,7 +775,6 @@ void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext)
         GrStringDraw(psContext, "SHT31: No Data", -1, 40, 160, 0);
     }
 
-    // Reset colour after climate display
     GrContextForegroundSet(psContext, ClrWhite);
 }
 
