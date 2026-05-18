@@ -121,7 +121,7 @@ void UpdateMotorStateCanvas(void);
 void SetMotorState(MotorState_t newState);
 void OnDashboardSliderChange(tWidget *psWidget, int32_t i32Value);
 void UpdateTime(void);
-
+void UpdateTemp(tContext *psContext);
 // ====================== Motor & Fault Globals ======================
 
 extern uint32_t g_ui32ActiveFaults;
@@ -134,6 +134,7 @@ tCanvasWidget g_sMotorStateCanvas;
 extern tCanvasWidget g_sFaultPanel;
 extern tSliderWidget g_sDashboardSlider;
 extern tCanvasWidget g_sTimeCanvas;
+extern tCanvasWidget g_sTempCanvas;
 extern tCanvasWidget g_sLightValCanvas;
 extern tCanvasWidget g_sLightValCanvas2;
 extern tCanvasWidget g_sAccelValueCanvas;

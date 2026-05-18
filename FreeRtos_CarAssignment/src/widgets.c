@@ -39,9 +39,8 @@ static void FormatUnsignedX100(char *buf, const char *label, uint32_t value_x100
              unit);
 }
 
-
 // ====================== Widget Definitions ======================
-// ====================== PANEL 1 - ENGINE (Clean Version) ======================
+
 
 // ====================== PANEL 1 - ENGINE ======================
 Canvas(g_sEngineCanvas, g_psPanels + 1, 0, 0,
@@ -202,12 +201,21 @@ Canvas(g_sDashboard, g_psPanels, &g_sDashboardSlider, &g_sFaultPanel,
        320, 240, CANVAS_STYLE_APP_DRAWN, 0, 0, 0, 0, 0, 0, OnDashboardPaint);
 
 // ====================== TIME CANVAS ON DASHBOARD ======================
+tCanvasWidget g_sTempCanvas = CanvasStruct( &g_sDashboard, 0, 0,
+                                            &g_sKentec320x240x16_SSD2119,
+                                            210, 8, 60, 28,                                      // x, y, w, h
+                                            CANVAS_STYLE_FILL | CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
+                                            ClrBlack, 0, ClrRed, &g_sFontCm16, "--,-- C", 0, 0);
+
+// ====================== TIME CANVAS ON DASHBOARD ======================
 tCanvasWidget g_sTimeCanvas = CanvasStruct( &g_sDashboard, 0, 0,
                                             &g_sKentec320x240x16_SSD2119,
-                                            15, 8, 220, 28,                                      // x, y, w, h
+                                            15, 8, 190, 28,                                      // x, y, w, h
                                             CANVAS_STYLE_FILL | CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
                                             ClrBlack, 0, ClrWhite, &g_sFontCm16, "00/00/00 00:00:00", 0, 0);
 
+
+                              
 // ====================== MOTOR STATE TEXTBOX ======================
 tCanvasWidget g_sMotorStateCanvas = CanvasStruct(&g_sDashboard, 0, 0,
                                                 &g_sKentec320x240x16_SSD2119,
@@ -345,7 +353,95 @@ void OnPlotModeChange4(tWidget *psWidget, uint32_t bSelected)
 
 void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
 {
+    uint32_t ui32Idx;
+    tRectangle sRect;
+    int32_t x1, y1, x2, y2, y1f, y2f;    
+    const uint32_t yMax = 2000;
+    const uint32_t canvas_xMin = 30, canvas_xRange = 210;
+    const uint32_t canvas_yMin = 50, canvas_yRange = 140;
+    static char buff1[4];
+    static char buff2[4];
+    // Background
+    GrContextForegroundSet(psContext, ClrBlack);
+    sRect.i16XMin = canvas_xMin+2; 
+    sRect.i16YMin = canvas_yMin+2;
+    sRect.i16XMax = canvas_xMin-2 + canvas_xRange;
+    sRect.i16YMax = canvas_yMin-2 + canvas_yRange;
+    GrRectFill(psContext, &sRect);
 
+    // Grid
+    GrContextForegroundSet(psContext, ClrGray);
+    sRect.i16XMin = canvas_xMin; sRect.i16YMin = canvas_yMin;
+    sRect.i16XMax = canvas_xMin + canvas_xRange;
+    sRect.i16YMax = canvas_yMin + canvas_yRange;
+    GrRectDraw(psContext, &sRect);
+
+    // Labels
+    GrContextFontSet(psContext, &g_sFontCm16);
+    GrContextForegroundSet(psContext, ClrSilver);
+    GrStringDrawCentered(psContext, "2000", -1, 10, 33, 0);
+    GrStringDrawCentered(psContext, "10",   -1, 10, 160, 0);
+    GrStringDrawCentered(psContext, "Now",  -1, 30, 175, 0);
+    GrStringDrawCentered(psContext, "-10s", -1, 210, 175, 0);
+
+    static char modeStr[15];
+     
+    if(g_eOPTPlotMode == IMU_PLOT_MODE_RAW_AND_FILTERED)
+    {
+        usprintf(modeStr, "Raw + Filtered"); 
+    }
+    else if(g_eOPTPlotMode == IMU_PLOT_MODE_FILTERED_ONLY) 
+    {
+        usprintf(modeStr, "Filtered Only");     
+    }
+
+    GrContextForegroundSet(psContext, ClrWhite);
+    GrStringDrawCentered(psContext, modeStr, -1, canvas_xMin + canvas_xRange/2, 8, 0);
+
+    // Draw plot lines
+    for (ui32Idx = 0; ui32Idx < PLOT_HISTORY_SIZE - 1; ui32Idx++)
+    {
+        uint32_t dataIdx1 = (g_plotIMUIndex + ui32Idx) % PLOT_HISTORY_SIZE;
+        uint32_t dataIdx2 = (g_plotIMUIndex + ui32Idx + 1) % PLOT_HISTORY_SIZE;
+
+        uint32_t raw1  = g_plotIMURawHistory[dataIdx1];
+        uint32_t raw2  = g_plotIMURawHistory[dataIdx2];
+        uint32_t filt1 = g_plotIMUFiltHistory[dataIdx1];
+        uint32_t filt2 = g_plotIMUFiltHistory[dataIdx2];
+
+        float sRaw1  = (float)raw1  / yMax; if (sRaw1  > 1.0f) sRaw1  = 1.0f;
+        float sRaw2  = (float)raw2  / yMax; if (sRaw2  > 1.0f) sRaw2  = 1.0f;
+        float sFilt1 = (float)filt1 / yMax; if (sFilt1 > 1.0f) sFilt1 = 1.0f;
+        float sFilt2 = (float)filt2 / yMax; if (sFilt2 > 1.0f) sFilt2 = 1.0f;
+
+        y1  = canvas_yMin + canvas_yRange - (int32_t)(sRaw1  * canvas_yRange);
+        y2  = canvas_yMin + canvas_yRange - (int32_t)(sRaw2  * canvas_yRange);
+        y1f = canvas_yMin + canvas_yRange - (int32_t)(sFilt1 * canvas_yRange);
+        y2f = canvas_yMin + canvas_yRange - (int32_t)(sFilt2 * canvas_yRange);
+
+        x1 = canvas_xMin + (ui32Idx * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
+        x2 = canvas_xMin + ((ui32Idx + 1) * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
+        
+        if (g_eOPTPlotMode == OPT_PLOT_MODE_RAW_AND_FILTERED)
+        {   
+            //usprintf(buff2, "%4d",filt1); 
+            // CanvasTextSet(&g_sLightValCanvas3, buff2);
+            // WidgetPaint((tWidget *)&g_sLightValCanvas3);
+            GrContextForegroundSet(psContext, ClrCyan);            
+            GrLineDraw(psContext, x1, y1-3, x2, y2-3);
+        }
+
+        // GrContextFontSet(psContext, &g_sFontCm12);
+        // GrContextForegroundSet(psContext, ClrYellow);
+        // usprintf(buff,"%3d",(int32_t)filt1);
+        // GrStringDrawCentered(psContext, buff, -1, 200, 65, 1);
+
+        // usprintf(buff1, "%4d",raw1); 
+        // CanvasTextSet(&g_sLightValCanvas, buff1);
+        // WidgetPaint((tWidget *)&g_sLightValCanvas);
+        GrContextForegroundSet(psContext, ClrYellow);
+        GrLineDraw(psContext, x1, y1f-3, x2, y2f-3);
+    }
 
 }
 
@@ -398,7 +494,6 @@ void OnOPTCanvasPaint(tWidget *psWidget, tContext *psContext)
         usprintf(modeStr, "Filtered Only");     
     }
            
-
     GrContextForegroundSet(psContext, ClrWhite);
     GrStringDrawCentered(psContext, modeStr, -1, canvas_xMin + canvas_xRange/2, 8, 0);
 
@@ -457,7 +552,7 @@ void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
     //tRectangle sRect;
     char speedtext[16];
     //char timetext[16];
-    char temptext[16];
+    
 
     //GrImageDraw(psContext, g_pui8StartBtnImage, 110, 70);
 
@@ -473,42 +568,7 @@ void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
     // GrRectFill(psContext, &sRect);
     
 
-    GrContextFontSet(psContext, &g_sFontCm20);
-    GrContextForegroundSet(psContext, ClrWhite);
 
-    // Dashboard temperature now comes from SHT31 instead of dummy g_ui32Temp
-    if (g_bSHT31Valid)
-    {
-        FormatSignedX100(temptext, "", g_i32CabinTempCx100, "C");
-    }
-    else
-    {
-        usprintf(temptext, "--.-- C");
-    }
-
-    GrContextFontSet(psContext, &g_sFontCm20);
-
-    if (!g_bSHT31Valid)
-    {
-        GrContextForegroundSet(psContext, ClrRed);
-    }
-    else if (g_bCoolingOn)
-    {
-        GrContextForegroundSet(psContext, ClrCyan);
-    }
-    else if (g_bHeatingOn)
-    {
-        GrContextForegroundSet(psContext, ClrOrange);
-    }
-    else
-    {
-        GrContextForegroundSet(psContext, ClrWhite);
-    }
-
-    GrStringDrawCentered(psContext, temptext, -1, 240, 20, 0);
-
-    // Reset colour after drawing temp
-    GrContextForegroundSet(psContext, ClrWhite);
 
     // Big Speed Number
     GrContextFontSet(psContext, &g_sFontCm34);
@@ -521,7 +581,8 @@ void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
 
     UpdateMotorStateCanvas();
     UpdateFaultPanel();
-
+    UpdateTemp(psContext);
+    
     // Ensure slider is painted
     WidgetPaint((tWidget *)&g_sDashboardSlider);
     
@@ -587,6 +648,47 @@ void UpdateTime(void)
     WidgetPaint((tWidget *)&g_sTimeCanvas);
 }
 
+void UpdateTemp(tContext *psContext)
+{
+    static char temptext[16];
+
+    // Dashboard temperature now comes from SHT31 instead of dummy g_ui32Temp
+    if (g_bSHT31Valid)
+    {
+        FormatSignedX100(temptext, "", g_i32CabinTempCx100, "C");
+    }
+    else
+    {
+        usprintf(temptext, "--.-- C");
+    }
+
+    GrContextFontSet(psContext, &g_sFontCm20);
+
+    if (!g_bSHT31Valid)
+    {
+        GrContextForegroundSet(psContext, ClrRed);
+    }
+    else if (g_bCoolingOn)
+    {
+        GrContextForegroundSet(psContext, ClrCyan);
+    }
+    else if (g_bHeatingOn)
+    {
+        GrContextForegroundSet(psContext, ClrOrange);
+    }
+    else
+    {
+        GrContextForegroundSet(psContext, ClrWhite);
+    }
+
+    //GrStringDrawCentered(psContext, temptext, -1, 240, 20, 0);
+
+    // Reset colour after drawing temp
+    GrContextForegroundSet(psContext, ClrWhite);
+
+    CanvasTextSet(&g_sTempCanvas, temptext);
+    WidgetPaint((tWidget *)&g_sTempCanvas);
+}
 
 void OnFaultPanelPaint(tWidget *psWidget, tContext *psContext)
 {

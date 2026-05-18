@@ -11,10 +11,7 @@ static void prvFaultSimulatorTask(void *pvParameters);
 static void prvIMUTask(void *pvParameters);
 static void prvSHT31Task(void *pvParameters); // SHT31 task prototype
 
-// Data format helpers for OPT3001 and SHT31
-static uint32_t UpdateLuxAverage(uint32_t newLux);
-static int32_t FloatToX100(float value);
-static uint32_t FloatToUX100(float value);
+
 
 static void prvConfigureLED(void);
 static void prvConfigureButton(void);
@@ -58,13 +55,6 @@ PlotMode_t g_eIMUPlotMode = IMU_PLOT_MODE_FILTERED_ONLY; // Fixed typo in declar
 PlotMode_t g_ePlotMode = IMU_PLOT_MODE_FILTERED_ONLY;
 volatile MotorState_t g_eMotorState = MOTOR_IDLE;
 
-// Moving average state for OPT3001 - Originally average divided by 10 even before 10 samples existed, 
-// leading to inaccurate initial readings
-#define OPT_AVG_WINDOW 10
-static uint32_t luxBuffer[OPT_AVG_WINDOW] = {0};
-static uint32_t luxSum = 0;
-static uint8_t luxIndex = 0;
-static uint8_t luxCount = 0;
 
 bool g_bOPTDisplayHold = false;
 bool g_bIMUDisplayHold = false;
@@ -96,7 +86,9 @@ void vCreateTask(void)
     prvConfigure();   
     prvConfigureHWTimer();                  
     SetTimeFromCompileTime();
-    
+
+    xTaskCreate(readerTask, "Reader", configMINIMAL_STACK_SIZE * 10, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY , NULL);   // highest priority
+
     xTaskCreate(prvLEDTasksw1,      "LED",     configMINIMAL_STACK_SIZE * 2, NULL, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(prvIMUTask,         "IMU",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL); 
     xTaskCreate(prvOptTask,         "OPT",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL);    
@@ -351,7 +343,7 @@ static void readerTask(void *pvParameters)
 
                     if (g_ui32Panel == 2)
                     {
-                        WidgetPaint((tWidget *)&g_sCanvas3);
+                        WidgetPaint((tWidget *)&g_sCanvas2);
                     }
 
                     break;
@@ -361,13 +353,14 @@ static void readerTask(void *pvParameters)
                 {
                     if (pData->flag == 1U)
                     {
+                        missingSampleCount++;
                         break;
                     }
 
                     g_plotIMURawHistory[g_plotIMUIndex] = (uint32_t)pData->val;
                     g_plotIMUFiltHistory[g_plotIMUIndex] = pData->avg;
                     g_plotIMUIndex = (g_plotIMUIndex + 1) % PLOT_HISTORY_SIZE;
-
+                    
                     if (g_ui32Panel == 3)
                     {
                         WidgetPaint((tWidget *)&g_sCanvas3);
@@ -419,17 +412,6 @@ static void readerTask(void *pvParameters)
                         g_bHeatingOn = false;
                     }
 
-                    // Repaint only the active panel
-                    if (g_ui32Panel == 0)
-                    {
-                        WidgetPaint((tWidget *)&g_sDashboard);
-                    }
-
-                    if (g_ui32Panel == 1)
-                    {
-                        WidgetPaint((tWidget *)&g_sEngineCanvas);
-                    }
-
                     break;
                 }
 
@@ -470,13 +452,9 @@ static void prvIMUTask(void *pvParameters)
             if (sensorBMI160ReadAccel(&raw))
             {
                 // Do almost nothing - just send raw values
-<<<<<<< HEAD
                 int16_t rawAvg = isqrt(raw.x*raw.x+raw.y*raw.y+raw.z*raw.z);
 
-                msg.id   = 2U;
-=======
-                msg.id   = SENSOR_ID_IMU; // Use defined sensor ID for IMU instead of magic number
->>>>>>> a370e95f608d1d7241277f488342c3b3c2e0287f
+                msg.id   = SENSOR_ID_IMU;
                 msg.val  = raw.x;      // raw LSB values
                 msg.avg  = rawAvg;
                 msg.flag = 0;
@@ -497,53 +475,7 @@ static void prvIMUTask(void *pvParameters)
     }
 }
 
-// ====================== OPT3001 Task ======================
-static uint32_t UpdateLuxAverage(uint32_t newLux)
-{
-    // Only divide by the number of valid samples during startup
-    if (luxCount < OPT_AVG_WINDOW)
-    {
-        luxBuffer[luxIndex] = newLux;
-        luxSum += newLux;
-        luxCount++;
-    }
-    else
-    {
-        luxSum -= luxBuffer[luxIndex];
-        luxBuffer[luxIndex] = newLux;
-        luxSum += newLux;
-    }
 
-    luxIndex++;
-    if (luxIndex >= OPT_AVG_WINDOW)
-    {
-        luxIndex = 0;
-    }
-
-    return luxSum / luxCount;
-}
-
-static int32_t FloatToX100(float value)
-{
-    // Convert signed float to integer x100
-    if (value >= 0.0f)
-    {
-        return (int32_t)((value * 100.0f) + 0.5f);
-    }
-
-    return (int32_t)((value * 100.0f) - 0.5f);
-}
-
-static uint32_t FloatToUX100(float value)
-{
-    // Convert unsigned float to integer x100
-    if (value <= 0.0f)
-    {
-        return 0U;
-    }
-
-    return (uint32_t)((value * 100.0f) + 0.5f);
-}
 
 // ====================== OPT3001 Optical sensor TASK ======================
 static void prvOptTask(void *pvParameters)
@@ -656,7 +588,7 @@ void prvDisplayTask(void *pvParameters)
     g_ui32Panel = 0;
     WidgetAdd(WIDGET_ROOT, (tWidget *)g_psPanels);    
     WidgetAdd((tWidget *)&g_psPanels[0], (tWidget *)&g_sTimeCanvas);
-    
+    WidgetAdd((tWidget *)&g_psPanels[0], (tWidget *)&g_sTempCanvas);
 
     WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sLightValCanvas);
     WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sLightValCanvas2);
@@ -718,7 +650,7 @@ static void prvConfigure(void)
         SafeUARTprintf("Event Group created successfully.\r\n");
     }
 
-    xTaskCreate(readerTask, "Reader", configMINIMAL_STACK_SIZE * 10, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY , NULL);
+    
 
 }
 
@@ -763,7 +695,6 @@ void prvConfigureOPT(void)
     SafeUARTprintf("I2C0 and OPT3001 driver initialized (hardware only).\n");
 
 }
-
 
 static void prvConfigureButton( void )
 {

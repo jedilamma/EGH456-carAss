@@ -14,6 +14,11 @@ volatile uint16_t g_ui16Year;
 volatile int16_t  g_i16MotorValue;
 
 // ====================== Function Prototypes ======================
+// Data format helpers for OPT3001 and SHT31
+uint32_t UpdateLuxAverage(uint32_t newLux);
+int32_t FloatToX100(float value);
+uint32_t FloatToUX100(float value);
+
 void EnableHighResTimer(void);
 void SafeUARTprintf(const char *pcString, ...);
 void SetTimeFromCompileTime(void);
