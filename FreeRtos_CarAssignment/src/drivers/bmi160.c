@@ -44,7 +44,7 @@ bool sensorBMI160ReadAccel(bmi160_accel_raw_t *raw)
 void sensorBMI160ConvertAccel(const bmi160_accel_raw_t *raw, bmi160_accel_uint_t *g)
 {
     // ±8g range = 4096 LSB/g
-    g->x = raw->x;
-    g->y = raw->y;
-    g->z = raw->z;
+    g->x = raw->x / 4096;
+    g->y = raw->y / 4096;
+    g->z = raw->z / 4096;
 }
