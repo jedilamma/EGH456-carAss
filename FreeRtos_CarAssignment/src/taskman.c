@@ -1,4 +1,5 @@
 #include "taskman.h"
+#include "temp_humidity.h" // Adds the SHT31 temperature/humidity wrapper
 
 // Hardware drivers for buttons and LEDs
 static void prvOptTask(void *pvParameters);
@@ -8,6 +9,12 @@ static void prvDisplayTask(void *pvParameters);
 static void prvMotorTask(void *pvParameters);
 static void prvFaultSimulatorTask(void *pvParameters);
 static void prvIMUTask(void *pvParameters);
+static void prvSHT31Task(void *pvParameters); // SHT31 task prototype
+
+// Data format helpers for OPT3001 and SHT31
+static uint32_t UpdateLuxAverage(uint32_t newLux);
+static int32_t FloatToX100(float value);
+static uint32_t FloatToUX100(float value);
 
 static void prvConfigureLED(void);
 static void prvConfigureButton(void);
@@ -47,13 +54,39 @@ uint32_t g_plotIMUFiltHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotIMUIndex = 0;
 
 PlotMode_t g_eOPTPlotMode = OPT_PLOT_MODE_FILTERED_ONLY;
-PlotMode_t g_ePIMUlotMode = IMU_PLOT_MODE_FILTERED_ONLY;
+PlotMode_t g_eIMUPlotMode = IMU_PLOT_MODE_FILTERED_ONLY; // Fixed typo in declaration as taskman.h expects g_eIMUPlotMode
 PlotMode_t g_ePlotMode = IMU_PLOT_MODE_FILTERED_ONLY;
 volatile MotorState_t g_eMotorState = MOTOR_IDLE;
+
+// Moving average state for OPT3001 - Originally average divided by 10 even before 10 samples existed, 
+// leading to inaccurate initial readings
+#define OPT_AVG_WINDOW 10
+static uint32_t luxBuffer[OPT_AVG_WINDOW] = {0};
+static uint32_t luxSum = 0;
+static uint8_t luxIndex = 0;
+static uint8_t luxCount = 0;
 
 bool g_bOPTDisplayHold = false;
 bool g_bIMUDisplayHold = false;
 bool g_bDisplayHold = false;
+
+// GUI-facing SHT31 state variables
+bool g_bHeatingOn = false;
+bool g_bCoolingOn = false;
+bool g_bSHT31Valid = false;
+
+// Store temp/humidity as integer x100 to avoid floating point in display code
+int32_t  g_i32CabinTempCx100 = 0;
+uint32_t g_ui32CabinHumidityRHx100 = 0;
+
+int32_t  g_i32HeatingThresholdCx100 = 1800;
+int32_t  g_i32CoolingThresholdCx100 = 2600;
+
+uint16_t g_ui32Speed = 0;
+
+tContext sContext;
+
+QueueHandle_t xQueue = NULL;
 
 void vCreateTask(void)
 {
@@ -70,6 +103,7 @@ void vCreateTask(void)
     xTaskCreate(prvDisplayTask,     "DISPLAY", configMINIMAL_STACK_SIZE * 12, NULL, tskIDLE_PRIORITY + 3, NULL);  // biggest
     xTaskCreate(prvFaultSimulatorTask, "FAULTSIM", configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(prvMotorTask,       "MOTOR",   configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(prvSHT31Task,       "SHT31",    configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL); // Create the SHT31 sampling/filtering task
 
     SafeUARTprintf("All tasks created successfully!\r\n");
     SafeUARTprintf("Free Heap AFTER tasks: %u bytes\r\n", xPortGetFreeHeapSize());
@@ -100,6 +134,86 @@ void prvLEDTasksw1(void *pvParameters)
     }
 }
 
+// New FreeRTOS task for the SHT31 temperature/humidity sensor
+static void prvSHT31Task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    TempHumiditySample_t sample;
+    struct MsgObj xMsgObj = {0};
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    uint32_t sampleCount = 0;
+
+    SafeUARTprintf("=== SHT31 Task Started ===\r\n");
+    SafeUARTprintf("SHT31 route: %s\r\n", SHT31_GetPinRouteDescription());
+
+    // Initialise the SHT31 driver using the system clock
+    TempHumidity_Init(g_ui32SysClock);
+
+    if (SHT31_IsDetected())
+    {
+        SafeUARTprintf("SHT31 detected at I2C address 0x%02x\r\n",
+                       (unsigned int)SHT31_GetI2CAddress());
+    }
+    else
+    {
+        SafeUARTprintf("SHT31 not detected during init\r\n");
+    }
+
+    for (;;)
+    {
+        // Update the SHT31 measurement and filtering state
+        TempHumidity_Update();
+        TempHumidity_GetLatest(&sample);
+
+        sampleCount++;
+
+        // Send SHT31 through the same queue as OPT3001 and IMU
+        xMsgObj.id   = SENSOR_ID_SHT31;
+        xMsgObj.tick = sampleCount;
+        xMsgObj.seq  = (uint32_t)sample.status;
+
+        if (sample.valid)
+        {
+            // Convert floats to x100 integers before queueing
+            int32_t rawTemp_x100  = FloatToX100(sample.raw_temperature_c);
+            int32_t filtTemp_x100 = FloatToX100(sample.filtered_temperature_c);
+
+            uint32_t rawHum_x100  = FloatToUX100(sample.raw_humidity_rh);
+            uint32_t filtHum_x100 = FloatToUX100(sample.filtered_humidity_rh);
+
+            xMsgObj.val  = rawTemp_x100;          // raw temperature x100
+            xMsgObj.avg  = (uint32_t)filtTemp_x100; // filtered temperature x100
+            xMsgObj.val2 = (int32_t)rawHum_x100;  // raw humidity x100
+            xMsgObj.avg2 = (int32_t)filtHum_x100; // filtered humidity x100
+            xMsgObj.flag = 0U;                    // valid reading
+        }
+        else
+        {
+            // Send a flagged fault message instead of silently failing
+            xMsgObj.val  = 0;
+            xMsgObj.avg  = 0;
+            xMsgObj.val2 = 0;
+            xMsgObj.avg2 = 0;
+            xMsgObj.flag = 1U;
+        }
+
+        if (xQueueSend(xQueue, &xMsgObj, 0) != pdPASS)
+        {
+            // Report queue full through the event group
+            xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
+        }
+        else
+        {
+            // Wake readerTask when new sensor data exists
+            xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY);
+        }
+
+        // SHT31 updates at 1 Hz which is enough for GUI display
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1000));
+    }
+}
+
 void xButtonsHandler(void)
 {
     // (Your existing ISR code - unchanged)
@@ -117,37 +231,217 @@ void xButtonsHandler(void)
     }
     g_ui32TimeStamp = xTaskGetTickCount();
 }
-
+// readerTask now drains the queue and keeps the newest message per sensor.
+// IMU runs faster than OPT3001 and SHT31, so a "single latest message" reader
+// can accidentally discard SHT31 before the GUI ever sees it.
 static void readerTask(void *pvParameters)
 {
-    struct MsgObj msg;
-    SafeUARTprintf("Reader Task Started (simple raw queue processing)\r\n");
+    struct MsgObj xCurrentMsgObj;
+    struct MsgObj latestSensorData[SENSOR_ID_SHT31 + 1];
+    bool hasLatest[SENSOR_ID_SHT31 + 1] = {false};
+
+    BaseType_t xRecvStatus;
+    EventBits_t uxBits;
+    uint32_t messagesDiscarded = 0;
+    uint16_t missingSampleCount = 0;
+
+    (void)pvParameters;
+
+    SafeUARTprintf("Reader Task Started - Draining queue, keeping latest per sensor...\r\n");
 
     for (;;)
     {
-        /* Wait for a message (blocks up to 100 ms) */
-        if (xQueueReceive(xQueue, &msg, pdMS_TO_TICKS(100)) == pdPASS)
+        // Wait for sensor/event updates, but timeout regularly
+        uxBits = xEventGroupWaitBits(xEventGroup,
+                                     (EVENT_SENSOR_MISSED |
+                                      EVENT_QUEUE_FULL |
+                                      EVENT_HIGH_THRESHOLD |
+                                      EVENT_LOW_THRESHOLD |
+                                      EVENT_SENSOR_DATA_READY |
+                                      EVENT_DISPLAY_HOLD |
+                                      EVENT_MOTOR_STATE_CHANGE),
+                                     pdTRUE,
+                                     pdFALSE,
+                                     pdMS_TO_TICKS(100));
+
+        if (uxBits & EVENT_MOTOR_STATE_CHANGE)
         {
-            /* Raw processing - just print what we received */
-            if (msg.id == 1)
+            if (g_eMotorState == MOTOR_FAULT)
             {
-                SafeUARTprintf("OPT  -> val=%u  avg=%u\r\n", 
-                               (unsigned int)msg.val, 
-                               (unsigned int)msg.avg);
-            }
-            else if (msg.id == 2)
-            {
-                SafeUARTprintf("IMU  -> X=%d  Mag=%u mg\r\n", 
-                               (int)msg.val, 
-                               (unsigned int)msg.avg);
+                g_ui32ActiveFaults |= FAULT_EBRAKE;
             }
             else
             {
-                SafeUARTprintf("Unknown msg id=%d\r\n", msg.id);
+                g_ui32ActiveFaults &= ~FAULT_EBRAKE;
             }
         }
+
+        if (uxBits & EVENT_QUEUE_FULL)
+        {
+            SafeUARTprintf("EVENT: QUEUE FULL! Message dropped.\r\n");
+        }
+
+        if (uxBits & EVENT_HIGH_THRESHOLD)
+        {
+            SafeUARTprintf("EVENT: HIGH THRESHOLD crossed! (Filtered > 1000 lux)\r\n");
+        }
+
+        if (uxBits & EVENT_LOW_THRESHOLD)
+        {
+            SafeUARTprintf("EVENT: LOW THRESHOLD crossed! (Filtered < 10 lux)\r\n");
+        }
+
+        // Reset the local "latest message" cache each reader cycle
+        for (uint8_t id = SENSOR_ID_OPT3001; id <= SENSOR_ID_SHT31; id++)
+        {
+            hasLatest[id] = false;
+        }
+
+        messagesDiscarded = 0;
+
+        // Drain all pending queue messages
+        xRecvStatus = xQueueReceive(xQueue, &xCurrentMsgObj, 0);
+
+        if (xRecvStatus != pdPASS)
+        {
+            missingSampleCount++;
+        }
+
+        while (xRecvStatus == pdPASS)
+        {
+            if ((xCurrentMsgObj.id >= SENSOR_ID_OPT3001) &&
+                (xCurrentMsgObj.id <= SENSOR_ID_SHT31))
+            {
+                if (hasLatest[xCurrentMsgObj.id])
+                {
+                    // Count only replacements for the same sensor ID as discarded
+                    messagesDiscarded++;
+                }
+
+                latestSensorData[xCurrentMsgObj.id] = xCurrentMsgObj;
+                hasLatest[xCurrentMsgObj.id] = true;
+            }
+
+            xRecvStatus = xQueueReceive(xQueue, &xCurrentMsgObj, 0);
+        }
+
+        // Process the newest message for each sensor independently
+        for (uint8_t id = SENSOR_ID_OPT3001; id <= SENSOR_ID_SHT31; id++)
+        {
+            if (!hasLatest[id])
+            {
+                continue;
+            }
+
+            struct MsgObj *pData = &latestSensorData[id];
+
+            switch (id)
+            {
+                case SENSOR_ID_OPT3001:
+                {
+                    if (pData->flag == 1U)
+                    {
+                        missingSampleCount++;
+                        break;
+                    }
+
+                    g_plotOPTRawHistory[g_plotOPTIndex] = (uint32_t)pData->val;
+                    g_plotOPTFiltHistory[g_plotOPTIndex] = pData->avg;
+                    g_plotOPTIndex = (g_plotOPTIndex + 1) % PLOT_HISTORY_SIZE;
+
+                    if (g_ui32Panel == 2)
+                    {
+                        WidgetPaint((tWidget *)&g_sCanvas3);
+                    }
+
+                    break;
+                }
+
+                case SENSOR_ID_IMU:
+                {
+                    if (pData->flag == 1U)
+                    {
+                        break;
+                    }
+
+                    g_plotIMURawHistory[g_plotIMUIndex] = (uint32_t)pData->val;
+                    g_plotIMUFiltHistory[g_plotIMUIndex] = pData->avg;
+                    g_plotIMUIndex = (g_plotIMUIndex + 1) % PLOT_HISTORY_SIZE;
+
+                    if (g_ui32Panel == 3)
+                    {
+                        WidgetPaint((tWidget *)&g_sCanvas3);
+                    }
+
+                    break;
+                }
+
+                case SENSOR_ID_SHT31:
+                {
+                    // Extract SHT31 filtered values from the message
+                    int32_t temp_x100 = (int32_t)pData->avg;
+                    uint32_t hum_x100 = (uint32_t)pData->avg2;
+
+                    // Update GUI-facing globals
+                    g_i32CabinTempCx100 = temp_x100;
+                    g_ui32CabinHumidityRHx100 = hum_x100;
+                    g_bSHT31Valid = (pData->flag == 0U);
+
+                    if (g_bSHT31Valid)
+                    {
+                        g_ui32ActiveFaults &= ~FAULT_SENSOR;
+
+                        // Climate status logic for GUI display
+                        if (g_i32CabinTempCx100 >= g_i32CoolingThresholdCx100)
+                        {
+                            g_bCoolingOn = true;
+                            g_bHeatingOn = false;
+                            g_ui32ActiveWarnings |= WARNING_HIGH_TEMP;
+                        }
+                        else if (g_i32CabinTempCx100 <= g_i32HeatingThresholdCx100)
+                        {
+                            g_bHeatingOn = true;
+                            g_bCoolingOn = false;
+                            g_ui32ActiveWarnings &= ~WARNING_HIGH_TEMP;
+                        }
+                        else
+                        {
+                            g_bHeatingOn = false;
+                            g_bCoolingOn = false;
+                            g_ui32ActiveWarnings &= ~WARNING_HIGH_TEMP;
+                        }
+                    }
+                    else
+                    {
+                        // Failed SHT31 read becomes a sensor fault
+                        g_ui32ActiveFaults |= FAULT_SENSOR;
+                        g_bCoolingOn = false;
+                        g_bHeatingOn = false;
+                    }
+
+                    // Repaint only the active panel
+                    if (g_ui32Panel == 0)
+                    {
+                        WidgetPaint((tWidget *)&g_sDashboard);
+                    }
+
+                    if (g_ui32Panel == 1)
+                    {
+                        WidgetPaint((tWidget *)&g_sEngineCanvas);
+                    }
+
+                    break;
+                }
+
+                default:
+                {
+                    break;
+                }
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(mainRECEIVER_DELAY_MS));
     }
-    vTaskDelay(pdMS_TO_TICKS(50));
 }
 
 static void prvIMUTask(void *pvParameters)
@@ -176,18 +470,79 @@ static void prvIMUTask(void *pvParameters)
             if (sensorBMI160ReadAccel(&raw))
             {
                 // Do almost nothing - just send raw values
+<<<<<<< HEAD
                 int16_t rawAvg = isqrt(raw.x*raw.x+raw.y*raw.y+raw.z*raw.z);
 
                 msg.id   = 2U;
+=======
+                msg.id   = SENSOR_ID_IMU; // Use defined sensor ID for IMU instead of magic number
+>>>>>>> a370e95f608d1d7241277f488342c3b3c2e0287f
                 msg.val  = raw.x;      // raw LSB values
                 msg.avg  = rawAvg;
                 msg.flag = 0;
-                xQueueSend(xQueue, &msg, 0);                
+                if (xQueueSend(xQueue, &msg, 0) != pdPASS)
+                {
+                    // Report queue overflow if IMU cannot send.
+                    xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
+                }
+                else
+                {
+                    // Wake readerTask when IMU data is queued
+                    xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY);
+                }             
             }
             xSemaphoreGive(xI2CMutex);
         }
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200));
     }
+}
+
+// ====================== OPT3001 Task ======================
+static uint32_t UpdateLuxAverage(uint32_t newLux)
+{
+    // Only divide by the number of valid samples during startup
+    if (luxCount < OPT_AVG_WINDOW)
+    {
+        luxBuffer[luxIndex] = newLux;
+        luxSum += newLux;
+        luxCount++;
+    }
+    else
+    {
+        luxSum -= luxBuffer[luxIndex];
+        luxBuffer[luxIndex] = newLux;
+        luxSum += newLux;
+    }
+
+    luxIndex++;
+    if (luxIndex >= OPT_AVG_WINDOW)
+    {
+        luxIndex = 0;
+    }
+
+    return luxSum / luxCount;
+}
+
+static int32_t FloatToX100(float value)
+{
+    // Convert signed float to integer x100
+    if (value >= 0.0f)
+    {
+        return (int32_t)((value * 100.0f) + 0.5f);
+    }
+
+    return (int32_t)((value * 100.0f) - 0.5f);
+}
+
+static uint32_t FloatToUX100(float value)
+{
+    // Convert unsigned float to integer x100
+    if (value <= 0.0f)
+    {
+        return 0U;
+    }
+
+    return (uint32_t)((value * 100.0f) + 0.5f);
 }
 
 // ====================== OPT3001 Optical sensor TASK ======================
@@ -216,7 +571,9 @@ static void prvOptTask(void *pvParameters)
     struct MsgObj xMsgObj = {0};
 
     for (;;)
-    {
+    {    
+        success = false; // Reset success flag every loop to prevent queuing stale data
+
         if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(500)) == pdPASS)
         {   
             // high resultion timer function
@@ -236,25 +593,12 @@ static void prvOptTask(void *pvParameters)
 
             sensorOpt3001Convert(rawData, &convertedLux);
             
-            static uint16_t val[10] = {0};
-            static uint8_t  idx = 0;
-            static uint32_t sum = 0;
+            // Calculate average - now calculates average of available samples before > 10 samples are collected
+            uint32_t rawLux = (uint32_t)convertedLux;
+            filt_avg10 = UpdateLuxAverage(rawLux);
 
-            // Remove old value from sum
-            sum -= val[idx];
-
-            // Insert new value
-            val[idx] = (uint16_t)convertedLux;
-            sum += val[idx];
-
-            // Move index (circular buffer)
-            idx = (idx + 1) % 10;
-
-            // Calculate average
-            filt_avg10 = sum / 10;
-
-            xMsgObj.id   = 1U; // device sending identifier
-            xMsgObj.val  = convertedLux;        // Value for unfiltered  data
+            xMsgObj.id   = SENSOR_ID_OPT3001; // device sending identifier - replaced magic number with defined ID for OPT3001
+            xMsgObj.val  = rawLux;        // Value for unfiltered  data
             xMsgObj.avg  = filt_avg10;          // Value for filtered  data
             xMsgObj.tick = sampleCount;         // leave blank
             xMsgObj.flag = 0;
@@ -277,7 +621,7 @@ static void prvOptTask(void *pvParameters)
         else
         {         
             success = false;   
-            xMsgObj.id   = 1U;
+            xMsgObj.id   = SENSOR_ID_OPT3001; // Device sending identifier - replaced magic number with defined ID for OPT3001
             xMsgObj.flag = 1;
             xEventGroupSetBits(xEventGroup, EVENT_SENSOR_MISSED);            
         }
@@ -288,7 +632,7 @@ static void prvOptTask(void *pvParameters)
             xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
         }
         // Signal that new data is ready
-        xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);  // reuse or create separate if needed
+        xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY); // EVENT_BTN_TOGGLE_PLOT should mean button/plot mode, not new sensor data
         
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200));
     }
@@ -572,11 +916,14 @@ static void prvFaultSimulatorTask(void *pvParameters)
             SafeUARTprintf("!!! E-STOP TRIGGERED (Accel or Distance) !!!\r\n");
         }
 
-        // Heating / Cooling logic
+        // Heating / Cooling logic - Commented out since its now sensor-driven
+        
+        /*
         if (g_ui32EngineTemp > g_ui32HeatingThreshold)
             g_bCoolingOn = true;
         else if (g_ui32EngineTemp < g_ui32CoolingThreshold)
             g_bCoolingOn = false;
+        */
 
         // // Update Engine Panel live values
         // if (g_ui32Panel == 1)

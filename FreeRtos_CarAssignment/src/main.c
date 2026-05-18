@@ -94,7 +94,7 @@ uint32_t g_ui32SysClock;
 SemaphoreHandle_t xButtonSemaphore1 = NULL;
 SemaphoreHandle_t xOptSemaphore = NULL;
 SemaphoreHandle_t xPrintMutex = NULL;
- SemaphoreHandle_t xI2CMutex = NULL ;
+SemaphoreHandle_t xI2CMutex = NULL ;
 
 /* Set up the clock and pin configurations to run this example. */
 static void prvSetupHardware( void );
@@ -119,13 +119,18 @@ int main( void )
     xPrintMutex = xSemaphoreCreateMutex();
     xI2CMutex = xSemaphoreCreateMutex();
 
-    if ( xButtonSemaphore1 != NULL || xOptSemaphore != NULL || xPrintMutex != NULL)
+    // Changed conditional to && to ensure scheduler only starts if all objects are created successfully
+    if ((xButtonSemaphore1 != NULL) && (xOptSemaphore != NULL) && (xPrintMutex != NULL) && (xI2CMutex != NULL))
     {
         /* Configure application specific hardware and initialize the task thread. */
         vCreateTask();
 
         /* Start the tasks. */
         vTaskStartScheduler(); 
+    }
+    else
+    {
+        UARTprintf("ERROR: Failed to create one or more RTOS objects\r\n"); // Failure state if any of the semaphores or mutexes fail to create
     }
 
     /* If all is well, the scheduler will now be running, and the following

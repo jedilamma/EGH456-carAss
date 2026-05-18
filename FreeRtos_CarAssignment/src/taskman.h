@@ -1,6 +1,11 @@
 #ifndef OPTFTOS_TASKMAN_H
 #define OPTFTOS_TASKMAN_H
 
+// Define sensor IDs to reduce dependency on magic numbers
+#define SENSOR_ID_OPT3001 1U // Optical Sensor (OPT3001)
+#define SENSOR_ID_IMU 2U // Accelerometer/Magnetometer (BMI160)
+#define SENSOR_ID_SHT31 3U // Temperature/Humidity Sensor (SHT31)
+
 // Standard includes
 #include <stdio.h>
 #include <stdint.h>
@@ -63,23 +68,39 @@ struct MsgObj
     uint32_t tick;
     uint8_t  flag;
     uint32_t seq;
+
+    // Extra payload fields to let one queue message carry both temperature and humidity
+    int32_t val2;
+    int32_t avg2;
 };
 
 // ====================== Globals - EXTERN ONLY ======================
-uint32_t g_ui32SysClock;
-volatile uint32_t g_ui32TimeStamp;
-volatile uint8_t  uiIndex;
-volatile uint8_t  uiIndex_2;
-volatile uint32_t g_pui32ButtonPressed;
+extern uint32_t g_ui32SysClock;
+extern volatile uint32_t g_ui32TimeStamp;
+extern volatile uint8_t  uiIndex;
+extern volatile uint8_t  uiIndex_2;
+extern volatile uint32_t g_pui32ButtonPressed;
 // ====================== Motor Task ======================
 
-uint16_t g_ui32Speed; 
-uint32_t g_ui32Panel;
-tContext sContext;
+extern uint16_t g_ui32Speed;
+extern uint32_t g_ui32Panel;
+extern tContext sContext;
 
+// GUI-facing SHT31 state variables
+extern bool g_bCoolingOn;
+extern bool g_bHeatingOn;
+extern bool g_bSHT31Valid;
 
-bool g_bCoolingOn; // cooling status
-QueueHandle_t xQueue;
+extern int32_t  g_i32CabinTempCx100;
+extern uint32_t g_ui32CabinHumidityRHx100;
+
+extern int32_t  g_i32HeatingThresholdCx100;
+extern int32_t  g_i32CoolingThresholdCx100;
+
+// Dedicated event bit for signaling new sensor data is available
+#define EVENT_SENSOR_DATA_READY (1U << 7)
+
+extern QueueHandle_t xQueue;
 
 extern SemaphoreHandle_t xI2CMutex;
 extern SemaphoreHandle_t xButtonSemaphore1;
@@ -92,7 +113,6 @@ extern uint32_t g_plotIMURawHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotIMUFiltHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotIMUIndex;
 
-#define PLOT_HISTORY_SIZE 30
 extern uint32_t g_plotOPTRawHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotOPTFiltHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotOPTIndex;
