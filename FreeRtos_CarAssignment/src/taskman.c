@@ -1,5 +1,4 @@
 #include "taskman.h"
-#include "temp_humidity.h" // Adds the SHT31 temperature/humidity wrapper
 
 // Hardware drivers for buttons and LEDs
 static void prvOptTask(void *pvParameters);
@@ -10,14 +9,17 @@ static void prvMotorTask(void *pvParameters);
 static void prvFaultSimulatorTask(void *pvParameters);
 static void prvIMUTask(void *pvParameters);
 static void prvSHT31Task(void *pvParameters); // SHT31 task prototype
-
-
+//static void prvSensorTask(void *pvParameters);
 
 static void prvConfigureLED(void);
 static void prvConfigureButton(void);
 static void prvConfigureOPT(void);
 static void prvConfigure(void);
 static void prvConfigureHWTimer(void);
+static void prvConfigureBMI160(void);
+
+
+static SemaphoreHandle_t xBMI160DRDY_Semaphore = NULL;
 
 EventGroupHandle_t xEventGroup = NULL;
 uint32_t g_ui32Panel = 0;
@@ -51,7 +53,7 @@ uint32_t g_plotIMUFiltHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotIMUIndex = 0;
 
 PlotMode_t g_eOPTPlotMode = OPT_PLOT_MODE_FILTERED_ONLY;
-PlotMode_t g_eIMUPlotMode = IMU_PLOT_MODE_FILTERED_ONLY; // Fixed typo in declaration as taskman.h expects g_eIMUPlotMode
+PlotMode_t g_eIMUPlotMode = IMU_PLOT_MODE_FILTERED_ONLY; 
 PlotMode_t g_ePlotMode = IMU_PLOT_MODE_FILTERED_ONLY;
 volatile MotorState_t g_eMotorState = MOTOR_IDLE;
 
@@ -59,12 +61,13 @@ volatile MotorState_t g_eMotorState = MOTOR_IDLE;
 bool g_bOPTDisplayHold = false;
 bool g_bIMUDisplayHold = false;
 bool g_bDisplayHold = false;
-
+bool g_faultSwitch = false;
+bool g_startDisplay = true;
 // GUI-facing SHT31 state variables
 bool g_bHeatingOn = false;
 bool g_bCoolingOn = false;
 bool g_bSHT31Valid = false;
-
+bool g_bFaultAcknowledged = false;
 // Store temp/humidity as integer x100 to avoid floating point in display code
 int32_t  g_i32CabinTempCx100 = 0;
 uint32_t g_ui32CabinHumidityRHx100 = 0;
@@ -82,6 +85,7 @@ void vCreateTask(void)
 {
     prvConfigureLED();
     prvConfigureButton();
+    prvConfigureBMI160();
     prvConfigureOPT();
     prvConfigure();   
     prvConfigureHWTimer();                  
@@ -90,9 +94,10 @@ void vCreateTask(void)
     xTaskCreate(readerTask, "Reader", configMINIMAL_STACK_SIZE * 10, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY , NULL);   // highest priority
 
     xTaskCreate(prvLEDTasksw1,      "LED",     configMINIMAL_STACK_SIZE * 2, NULL, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(prvIMUTask,         "IMU",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL); 
-    xTaskCreate(prvOptTask,         "OPT",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL);    
-    xTaskCreate(prvDisplayTask,     "DISPLAY", configMINIMAL_STACK_SIZE * 12, NULL, tskIDLE_PRIORITY + 3, NULL);  // biggest
+    xTaskCreate(prvOptTask,         "OPT",     configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 2, NULL);   
+    //xTaskCreate(prvIMUTask,         "IMU",     configMINIMAL_STACK_SIZE * 12, NULL, tskIDLE_PRIORITY + 2, NULL);  
+
+    xTaskCreate(prvDisplayTask,     "DISPLAY", configMINIMAL_STACK_SIZE * 20, NULL, tskIDLE_PRIORITY + 3, NULL);  // biggest
     xTaskCreate(prvFaultSimulatorTask, "FAULTSIM", configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(prvMotorTask,       "MOTOR",   configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(prvSHT31Task,       "SHT31",    configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL); // Create the SHT31 sampling/filtering task
@@ -126,6 +131,7 @@ void prvLEDTasksw1(void *pvParameters)
     }
 }
 
+    
 // New FreeRTOS task for the SHT31 temperature/humidity sensor
 static void prvSHT31Task(void *pvParameters)
 {
@@ -324,9 +330,10 @@ static void readerTask(void *pvParameters)
             {
                 continue;
             }
-
+            
             struct MsgObj *pData = &latestSensorData[id];
 
+                                    
             switch (id)
             {
                 case SENSOR_ID_OPT3001:
@@ -336,6 +343,11 @@ static void readerTask(void *pvParameters)
                         missingSampleCount++;
                         break;
                     }
+                    SafeUARTprintf("RX xQueue id=0x%02x val1=%u avg1=%u flag=%u \r\n",
+                                    (unsigned int)pData->id,
+                                    (unsigned int)pData->val,
+                                    (unsigned int)pData->avg2,                            
+                                    (unsigned int)pData->flag);
 
                     g_plotOPTRawHistory[g_plotOPTIndex] = (uint32_t)pData->val;
                     g_plotOPTFiltHistory[g_plotOPTIndex] = pData->avg;
@@ -343,7 +355,7 @@ static void readerTask(void *pvParameters)
 
                     if (g_ui32Panel == 2)
                     {
-                        WidgetPaint((tWidget *)&g_sCanvas2);
+                         WidgetPaint((tWidget *)&g_sCanvas2);
                     }
 
                     break;
@@ -353,14 +365,16 @@ static void readerTask(void *pvParameters)
                 {
                     if (pData->flag == 1U)
                     {
-                        missingSampleCount++;
                         break;
                     }
-
+                    SafeUARTprintf("RX xQueue id=0x%02x val1=%u \r\n",
+                                    (unsigned int)pData->id,
+                                    (unsigned int)pData->val);
+           
                     g_plotIMURawHistory[g_plotIMUIndex] = (uint32_t)pData->val;
                     g_plotIMUFiltHistory[g_plotIMUIndex] = pData->avg;
                     g_plotIMUIndex = (g_plotIMUIndex + 1) % PLOT_HISTORY_SIZE;
-                    
+
                     if (g_ui32Panel == 3)
                     {
                         WidgetPaint((tWidget *)&g_sCanvas3);
@@ -412,6 +426,17 @@ static void readerTask(void *pvParameters)
                         g_bHeatingOn = false;
                     }
 
+                    // // Repaint only the active panel
+                    // if (g_ui32Panel == 0)
+                    // {
+                    //     WidgetPaint((tWidget *)&g_sDashboard);
+                    // }
+
+                    // if (g_ui32Panel == 1)
+                    // {
+                    //     WidgetPaint((tWidget *)&g_sEngineCanvas);
+                    // }
+
                     break;
                 }
 
@@ -425,6 +450,7 @@ static void readerTask(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(mainRECEIVER_DELAY_MS));
     }
 }
+
 
 static void prvIMUTask(void *pvParameters)
 {
@@ -475,98 +501,78 @@ static void prvIMUTask(void *pvParameters)
     }
 }
 
-
-
 // ====================== OPT3001 Optical sensor TASK ======================
 static void prvOptTask(void *pvParameters)
 {
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    uint32_t tStart, tEnd, duration_us;
-    uint32_t totalTime = 0, sampleCount = 0;
-    uint32_t avgTime_us = 0;
     uint16_t rawData = 0;
     float convertedLux = 0.0f;
     bool success = false;
-
     uint32_t filt_avg10 = 0;
 
     SafeUARTprintf("=== OPT3001 Task Started ===\r\n");
 
-    if (!sensorOpt3001Init())
+    // Initialise with mutex protection
+    if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(1000)) == pdPASS)
+    {
+        success = sensorOpt3001Init();
+        xSemaphoreGive(xI2CMutex);
+    }
+
+    if (!success)
     {
         SafeUARTprintf("OPT3001 init FAILED!\r\n");
         vTaskDelete(NULL);
+        return;
     }
 
-    EnableHighResTimer();
+    SafeUARTprintf("OPT3001 initialized successfully. Waiting for first conversion...\r\n");
+    vTaskDelay(pdMS_TO_TICKS(800));        // Give sensor time for first reading
 
     struct MsgObj xMsgObj = {0};
 
     for (;;)
-    {    
-        success = false; // Reset success flag every loop to prevent queuing stale data
-
-        if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(500)) == pdPASS)
+    {
+        if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(300)) == pdPASS)   // short timeout
         {   
-            // high resultion timer function
-            tStart = *(volatile uint32_t *)0xE0001004;
             success = sensorOpt3001Read(&rawData);
-            tEnd = *(volatile uint32_t *)0xE0001004;
-            duration_us = (tEnd - tStart) / (g_ui32SysClock / 1000000UL);
 
-            xSemaphoreGive(xI2CMutex);
-        }
-       
-        if (success)
-        {
-            totalTime += duration_us;
-            sampleCount++;
-            avgTime_us = totalTime / sampleCount;
-
-            sensorOpt3001Convert(rawData, &convertedLux);
-            
-            // Calculate average - now calculates average of available samples before > 10 samples are collected
-            uint32_t rawLux = (uint32_t)convertedLux;
-            filt_avg10 = UpdateLuxAverage(rawLux);
-
-            xMsgObj.id   = SENSOR_ID_OPT3001; // device sending identifier - replaced magic number with defined ID for OPT3001
-            xMsgObj.val  = rawLux;        // Value for unfiltered  data
-            xMsgObj.avg  = filt_avg10;          // Value for filtered  data
-            xMsgObj.tick = sampleCount;         // leave blank
-            xMsgObj.flag = 0;
-            xMsgObj.seq  = avgTime_us;          // leave blank
-
-            // === Threshold Events ===
-            if (filt_avg10 > g_ui32LuxMaxThreshold)
-                xEventGroupSetBits(xEventGroup, EVENT_HIGH_THRESHOLD);
-            else if (filt_avg10 < g_ui32LuxMinThreshold) {
-                xEventGroupSetBits(xEventGroup, EVENT_LOW_THRESHOLD);
-                LEDWrite(LED_D1, LED_D1);          // MIN LUX → LED_D1 ON
-            } 
-            else 
+            if (success)
             {
+                sensorOpt3001Convert(rawData, &convertedLux);
+
+                uint32_t rawLux = (uint32_t)convertedLux;
+                filt_avg10 = UpdateLuxAverage(rawLux);
+
+                //SafeUARTprintf("OPT3001 SUCCESS -> Raw=0x%04X, Lux=%.2f, Filtered=%u\r\n", 
+                //               rawLux, convertedLux, (unsigned int)filt_avg10);
                 
-                LEDWrite(LED_D1, 0);               // clear LED when above min
+                xMsgObj.id   = SENSOR_ID_OPT3001;
+                xMsgObj.val  = rawLux;
+                xMsgObj.avg  = filt_avg10;
+                xMsgObj.flag = 0;
+            }
+            else
+            {
+                xMsgObj.flag = 1;
+                // SafeUARTprintf("OPT3001 no data ready yet\r\n");   // uncomment for debug if needed
             }
 
+            xSemaphoreGive(xI2CMutex);            
         }
         else
-        {         
-            success = false;   
-            xMsgObj.id   = SENSOR_ID_OPT3001; // Device sending identifier - replaced magic number with defined ID for OPT3001
+        {
             xMsgObj.flag = 1;
-            xEventGroupSetBits(xEventGroup, EVENT_SENSOR_MISSED);            
+            SafeUARTprintf("OPT3001: Could not take I2C mutex\r\n");
         }
 
-        // Send to queue
+        // Always send something to the queue so the reader doesn't starve
         if (xQueueSend(xQueue, &xMsgObj, 0) != pdPASS)
-        {
             xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
-        }
-        // Signal that new data is ready
-        xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY); // EVENT_BTN_TOGGLE_PLOT should mean button/plot mode, not new sensor data
-        
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200));
+        else
+            xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY);
+
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));   // run once per second
     }
 }
 
@@ -589,14 +595,13 @@ void prvDisplayTask(void *pvParameters)
     WidgetAdd(WIDGET_ROOT, (tWidget *)g_psPanels);    
     WidgetAdd((tWidget *)&g_psPanels[0], (tWidget *)&g_sTimeCanvas);
     WidgetAdd((tWidget *)&g_psPanels[0], (tWidget *)&g_sTempCanvas);
-
-    WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sLightValCanvas);
-    WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sLightValCanvas2);
-
+    
     // === Add Checkboxes for Graph Panels ===
     // Panel 2    
     WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sPlotModeCheckBox); 
     WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sPlotModeCheckBox2);
+    WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sLightValCanvas);
+    WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sLightValCanvas2);
 
     // Panel 3
     WidgetAdd((tWidget *)&g_psPanels[3], (tWidget *)&g_sPlotModeCheckBox3);
@@ -606,17 +611,22 @@ void prvDisplayTask(void *pvParameters)
     WidgetAdd((tWidget *)&g_psPanels[4], (tWidget *)&g_sPlotModeCheckBox6);
     WidgetAdd((tWidget *)&g_psPanels[4], (tWidget *)&g_sPlotModeCheckBox5);
 
+    // Panel 5
+    WidgetAdd((tWidget *)&g_psPanels[5], (tWidget *)&g_sPlotModeCheckBox8);
+    WidgetAdd((tWidget *)&g_psPanels[5], (tWidget *)&g_sPlotModeCheckBox7);
+
     // Add Motor State and Fault Panel
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sMotorStateCanvas);
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultPanel);  
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sStartButton);
+    WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sClearFaultButton);
 
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sCrashTolSlider);
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sAccelMaxSlider);
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sDetRangeSlider);
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sLuxMinSlider);
     // Add permanent side buttons to root (do this only once)
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 6; i++)
     {
         WidgetAdd(WIDGET_ROOT, (tWidget *)&g_psSideButtons[i]);
     }
@@ -649,8 +659,6 @@ static void prvConfigure(void)
     {
         SafeUARTprintf("Event Group created successfully.\r\n");
     }
-
-    
 
 }
 
@@ -746,15 +754,19 @@ static void prvMotorTask(void *pvParameters)
         switch (g_eMotorState)
         {
             case MOTOR_IDLE:
-                // Simulate start request (e.g. from button or command)
-                vTaskDelay(pdMS_TO_TICKS(3000));        // Stay in IDLE for 3 seconds
-                SetMotorState(MOTOR_STARTING);
+                    // Simulate start request (e.g. from button or command)
+                    //vTaskDelay(pdMS_TO_TICKS(3000));        // Stay in IDLE for 3 seconds
+                    //SetMotorState(MOTOR_STARTING);
+                    g_startDisplay = true;
+                    WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sStartButton);
+                    //WidgetPaint((tWidget *)&g_sDashboard);
+
                 break;
 
             case MOTOR_STARTING:
-                SafeUARTprintf("Motor STARTING...\r\n");
-                vTaskDelay(pdMS_TO_TICKS(2000));        // Starting sequence
-                SetMotorState(MOTOR_RUNNING);
+                    SafeUARTprintf("Motor STARTING...\r\n");
+                    vTaskDelay(pdMS_TO_TICKS(2000));        // Starting sequence
+                    SetMotorState(MOTOR_RUNNING);
                 break;
 
             case MOTOR_RUNNING:
@@ -769,13 +781,28 @@ static void prvMotorTask(void *pvParameters)
                 break;
 
             case MOTOR_FAULT:
+                // SafeUARTprintf("!!! MOTOR FAULT !!!\r\n");
+                // g_ui32ActiveFaults |= FAULT_EBRAKE | FAULT_OVERCURRENT;
+                // vTaskDelay(pdMS_TO_TICKS(5000));        // Stay in fault for 5s
+                
+                // // Auto recover for demo
+                // g_ui32ActiveFaults = 0;
+                // SetMotorState(MOTOR_IDLE);
+
+
                 SafeUARTprintf("!!! MOTOR FAULT !!!\r\n");
                 g_ui32ActiveFaults |= FAULT_EBRAKE | FAULT_OVERCURRENT;
-                vTaskDelay(pdMS_TO_TICKS(5000));        // Stay in fault for 5s
-                
-                // Auto recover for demo
+                g_bFaultAcknowledged = false;
+
+                // PAUSE motor task until user presses ACK FAULT button
+                while (g_eMotorState == MOTOR_FAULT && !g_bFaultAcknowledged)
+                {
+                    vTaskDelay(pdMS_TO_TICKS(250));
+                }
+
                 g_ui32ActiveFaults = 0;
-                SetMotorState(MOTOR_IDLE);
+                SetMotorState(MOTOR_IDLE);                
+
                 break;
 
             default:
@@ -864,4 +891,43 @@ static void prvFaultSimulatorTask(void *pvParameters)
 
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(4000));  // Every 4 seconds
     }
+}
+
+
+// ====================== BMI160 DRDY INTERRUPT SETUP ======================
+
+static void prvConfigureBMI160(void)
+{
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+    while (!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOB)) {}
+
+    GPIOPinTypeGPIOInput(GPIO_PORTB_BASE, GPIO_PIN_0);
+    GPIOPadConfigSet(GPIO_PORTB_BASE, GPIO_PIN_0, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+
+    GPIOIntTypeSet(GPIO_PORTB_BASE, GPIO_PIN_0, GPIO_RISING_EDGE);
+
+    if (xBMI160DRDY_Semaphore == NULL)
+        xBMI160DRDY_Semaphore = xSemaphoreCreateBinary();
+
+    GPIOIntRegister(GPIO_PORTB_BASE, xBMI160DRDYHandler);
+
+    // === THIS IS THE FIX ===
+    IntPrioritySet(INT_GPIOB, 0xA0);     // same priority as I2C0
+
+    GPIOIntEnable(GPIO_PORTB_BASE, GPIO_PIN_0);
+    IntEnable(INT_GPIOB);
+
+    SafeUARTprintf("BMI160 INT1 interrupt enabled on PB0 (rising edge)\r\n");
+}
+
+void xBMI160DRDYHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    GPIOIntClear(GPIO_PORTB_BASE, GPIO_PIN_0);
+
+    if (xBMI160DRDY_Semaphore != NULL)
+        xSemaphoreGiveFromISR(xBMI160DRDY_Semaphore, &xHigherPriorityTaskWoken);
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }

@@ -28,10 +28,10 @@ typedef struct {
 } bmi160_accel_raw_t;
 
 typedef struct {
-    int16_t x;   // in g
-    int16_t y;
-    int16_t z;
-} bmi160_accel_uint_t;
+    float x;   // in g
+    float y;
+    float z;
+} bmi160_accel_float_t;
 
 // Add near the top with the other globals
 #define PRINT_BUFFER_SIZE   256
@@ -41,7 +41,7 @@ extern char g_pcPrintBuffer[PRINT_BUFFER_SIZE];
 /* Functions */
 bool sensorBMI160Init(void);
 bool sensorBMI160ReadAccel(bmi160_accel_raw_t *raw);
-void sensorBMI160ConvertAccel(const bmi160_accel_raw_t *raw, bmi160_accel_uint_t *g);
+void sensorBMI160ConvertAccel(const bmi160_accel_raw_t *raw, bmi160_accel_float_t *g);
 
 #ifdef __cplusplus
 }

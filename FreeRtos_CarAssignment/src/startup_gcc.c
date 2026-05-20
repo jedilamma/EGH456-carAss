@@ -53,7 +53,7 @@ extern void xTimerHandler(void);
 extern void xButtonsHandler(void);
 extern void I2C0IntHandler(void);
 extern void xOPT_INT_Handler(void);
-
+extern void xBMI160DRDYHandler(void);
 //*****************************************************************************
 //
 // The entry point for the application.
@@ -95,7 +95,7 @@ void (* const g_pfnVectors[])(void) =
     xPortPendSVHandler,                     // The PendSV handler
     xPortSysTickHandler,                    // The SysTick handler
     IntDefaultHandler,                      // GPIO Port A
-    IntDefaultHandler,                      // GPIO Port B
+    xBMI160DRDYHandler,                      // GPIO Port B (BMI160 DRDY)
     IntDefaultHandler,                      // GPIO Port C
     IntDefaultHandler,                      // GPIO Port D
     IntDefaultHandler,                      // GPIO Port E

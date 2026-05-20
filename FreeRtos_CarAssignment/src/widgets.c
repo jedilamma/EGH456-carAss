@@ -173,8 +173,29 @@ tCheckBoxWidget g_sPlotModeCheckBox6 = CheckBoxStruct(g_psPanels + 4,
     16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Show Raw",
     0, OnPlotModeChange4);
 
+// Panel 5 - Plotting
+Canvas(g_sCanvas5, g_psPanels + 5, &g_sPlotModeCheckBox7, 0,
+       &g_sKentec320x240x16_SSD2119,
+       30, 50, 200, 140,
+       CANVAS_STYLE_OUTLINE | CANVAS_STYLE_APP_DRAWN,
+       0, ClrGray, 0, 0, 0, 0, OnCanvasPaint);
+
+tCheckBoxWidget g_sPlotModeCheckBox7 = CheckBoxStruct(g_psPanels + 5,
+    NULL, 0, &g_sKentec320x240x16_SSD2119,
+    30, 200, 65, 20,
+    CB_STYLE_OUTLINE | CB_STYLE_TEXT | CB_STYLE_SELECTED,
+    16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Hold",
+    0, OnPlotModeChange5);
+
+tCheckBoxWidget g_sPlotModeCheckBox8 = CheckBoxStruct(g_psPanels + 5,
+    &g_sPlotModeCheckBox7, 0, &g_sKentec320x240x16_SSD2119,
+    135, 200, 95, 20,
+    CB_STYLE_OUTLINE | CB_STYLE_TEXT | CB_STYLE_SELECTED,
+    16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Show Raw",
+    0, OnPlotModeChange6);
+
 // Main Panels Array
-tCanvasWidget g_psPanels[5] =
+tCanvasWidget g_psPanels[6] =
 {
     // Panel 0: Dashboard
     CanvasStruct(0, 0, &g_sDashboard, &g_sKentec320x240x16_SSD2119,
@@ -188,11 +209,16 @@ tCanvasWidget g_psPanels[5] =
     CanvasStruct(0, 0, &g_sCanvas2, &g_sKentec320x240x16_SSD2119,
                  0, 24, 320, 240, CANVAS_STYLE_FILL, ClrBlack, 0, 0, 0, 0, 0, 0),
 
-    // Panel 3: Range / Plotting 2
+    // Panel 3: Accelerometer / Plotting
     CanvasStruct(0, 0, &g_sCanvas3, &g_sKentec320x240x16_SSD2119,
                  0, 24, 320, 240, CANVAS_STYLE_FILL, ClrBlack, 0, 0, 0, 0, 0, 0),
-                     // Panel 3: Range / Plotting 2
+
+    // Panel 3: Range / Plotting 2
     CanvasStruct(0, 0, &g_sCanvas4, &g_sKentec320x240x16_SSD2119,
+                 0, 24, 320, 240, CANVAS_STYLE_FILL, ClrBlack, 0, 0, 0, 0, 0, 0),
+     // Panel 4: Temp humid / Plotting
+
+    CanvasStruct(0, 0, &g_sCanvas5, &g_sKentec320x240x16_SSD2119,
                  0, 24, 320, 240, CANVAS_STYLE_FILL, ClrBlack, 0, 0, 0, 0, 0, 0),
 };
 
@@ -226,9 +252,16 @@ tCanvasWidget g_sMotorStateCanvas = CanvasStruct(&g_sDashboard, 0, 0,
 // ====================== FAULTS / WARNINGS PANEL ======================
 tCanvasWidget g_sFaultPanel = CanvasStruct(&g_sDashboard, &g_sMotorStateCanvas, 0,
                                             &g_sKentec320x240x16_SSD2119,
-                                            45, 160, 180, 200,
+                                            45, 180, 180, 200,
                                             CANVAS_STYLE_FILL | CANVAS_STYLE_OUTLINE | CANVAS_STYLE_APP_DRAWN,
                                             ClrBlack, ClrRed, ClrWhite, &g_sFontCm16, "", 0, OnFaultPanelPaint);
+
+// ====================== NEW: ACK FAULT BUTTON (visibility controlled) ======================
+tPushButtonWidget g_sClearFaultButton = RectangularButtonStruct(&g_sDashboard, 0, 0,
+                                            &g_sKentec320x240x16_SSD2119, 195, 115, 115, 45,
+                                            PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
+                                            ClrRed, ClrBlack, ClrWhite, ClrWhite,
+                                            &g_sFontCm18, "ACK FAULT", 0, 0, 0, 0, OnClearFaultButtonPress);
 
 // ====================== DASHBOARD SLIDER ======================
 tSliderWidget g_sDashboardSlider = SliderStruct(&g_sDashboard, 
@@ -253,102 +286,112 @@ tPushButtonWidget g_sStartButton = RectangularButtonStruct(&g_sDashboard, 0, 0,
 // ====================== PERMANENT SIDE BUTTONS ======================
 // These are always on screen, on every panel
 
-tPushButtonWidget g_psSideButtons[5] =
+tPushButtonWidget g_psSideButtons[6] =
 {
     // 0 - Engine
-    RectangularButtonStruct(0, &g_psSideButtons[1], 0,
-        &g_sKentec320x240x16_SSD2119, 235, 40, 75, 28,
+    RectangularButtonStruct(0, 0, 0,
+        &g_sKentec320x240x16_SSD2119, 235, 40, 75, 25,
         PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
         ClrDarkBlue, ClrBlack, ClrWhite, ClrWhite,
-        &g_sFontCm12, "Dash", g_pui8BtnUpImage, 0, 0, 0, OnDashButtonPress),
+        &g_sFontCm12b, "Dash", 0, 0, 0, 0, OnDashButtonPress),
 
     // 1 - Light
-    RectangularButtonStruct(0, &g_psSideButtons[2], 0,
-        &g_sKentec320x240x16_SSD2119, 235, 75, 75, 28,
+    RectangularButtonStruct(0, 0, 0,
+        &g_sKentec320x240x16_SSD2119, 235, 70, 75, 25,
         PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
         ClrDarkBlue, ClrBlack, ClrWhite, ClrWhite,
-        &g_sFontCm12, "Engine", g_pui8BtnUpImage, 0, 0, 0, OnDashButtonPress),
+        &g_sFontCm12b, "Settings", 0, 0, 0, 0, OnDashButtonPress),
 
     // 2 - Temp
-    RectangularButtonStruct(0, &g_psSideButtons[3], 0,
-        &g_sKentec320x240x16_SSD2119, 235, 110, 75, 28,
+    RectangularButtonStruct(0, 0, 0,
+        &g_sKentec320x240x16_SSD2119, 235, 100, 75, 25,
         PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
         ClrDarkBlue, ClrBlack, ClrWhite, ClrWhite,
-        &g_sFontCm12, "Light", g_pui8BtnUpImage, 0, 0, 0, OnDashButtonPress),
-
+        &g_sFontCm12b, "Light", 0, 0, 0, 0, OnDashButtonPress),
+    // 3 - Accelerometer
+    RectangularButtonStruct(0, 0, 0,
+        &g_sKentec320x240x16_SSD2119, 235, 130, 75, 25,
+        PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
+        ClrDarkBlue, ClrBlack, ClrWhite, ClrWhite,
+        &g_sFontCm12b, "Accel", 0, 0, 0, 0, OnDashButtonPress),
     // 3 - Range
     RectangularButtonStruct(0, 0, 0,
-        &g_sKentec320x240x16_SSD2119, 235, 145, 75, 28,
+        &g_sKentec320x240x16_SSD2119, 235, 160, 75, 25,
         PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
         ClrDarkBlue, ClrBlack, ClrWhite, ClrWhite,
-        &g_sFontCm12, "Temp", g_pui8BtnUpImage, 0, 0, 0, OnDashButtonPress),
-        // 3 - Range
+        &g_sFontCm12b, "Range", 0, 0, 0, 0, OnDashButtonPress),
+    // temp /humidity
     RectangularButtonStruct(0, 0, 0,
-        &g_sKentec320x240x16_SSD2119, 235, 180, 75, 28,
+        &g_sKentec320x240x16_SSD2119, 235, 190, 75, 25,
         PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
         ClrDarkBlue, ClrBlack, ClrWhite, ClrWhite,
-        &g_sFontCm12, "Range", g_pui8BtnUpImage, 0, 0, 0, OnDashButtonPress),
+        &g_sFontCm12b, "Temp", 0, 0, 0, 0, OnDashButtonPress)
 };
-
-// Plot callbacks
-void OnPlotModeChange(tWidget *psWidget, uint32_t bSelected)
-{
-    g_eOPTPlotMode = bSelected ? OPT_PLOT_MODE_RAW_AND_FILTERED : OPT_PLOT_MODE_FILTERED_ONLY;    
-    if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);
-    if (g_ui32Panel == 2) WidgetPaint((tWidget *)&g_sCanvas3);
-}
-
-void OnPlotModeChange2(tWidget *psWidget, uint32_t bSelected)
-{
-    g_bOPTDisplayHold = bSelected;
-    if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_DISPLAY_HOLD);
-    if (g_ui32Panel == 2) WidgetPaint((tWidget *)&g_sCanvas3);
-}
 
 // Plot callbacks
 void OnOPTPlotModeChange(tWidget *psWidget, uint32_t bSelected)
 {
     g_eOPTPlotMode = bSelected ? OPT_PLOT_MODE_RAW_AND_FILTERED : OPT_PLOT_MODE_FILTERED_ONLY;    
-    if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);
-    if (g_ui32Panel == 2) WidgetPaint((tWidget *)&g_sCanvas3);
+    if (xEventGroup) 
+        xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);
+    if (g_ui32Panel == 2) 
+        WidgetPaint((tWidget *)&g_sCanvas2);
 }
 
 void OnOPTPlotModeChange2(tWidget *psWidget, uint32_t bSelected)
 {
     g_bOPTDisplayHold = bSelected;
-    if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_DISPLAY_HOLD);
-    if (g_ui32Panel == 2) WidgetPaint((tWidget *)&g_sCanvas3);
+    //if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_DISPLAY_HOLD);
+    if (g_ui32Panel == 2) 
+        WidgetPaint((tWidget *)&g_sCanvas2);
 }
 
 
 // Plot callbacks
 void OnIMUPlotModeChange(tWidget *psWidget, uint32_t bSelected)
 {
-    g_eOPTPlotMode = bSelected ? IMU_PLOT_MODE_RAW_AND_FILTERED : IMU_PLOT_MODE_FILTERED_ONLY;
+    g_eIMUPlotMode = bSelected ? IMU_PLOT_MODE_RAW_AND_FILTERED : IMU_PLOT_MODE_FILTERED_ONLY;
     //if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);
-    if (g_ui32Panel == 3) WidgetPaint((tWidget *)&g_sCanvas4);
+    if (g_ui32Panel == 3) 
+        WidgetPaint((tWidget *)&g_sCanvas3);
 }
 
 void OnIMUPlotModeChange2(tWidget *psWidget, uint32_t bSelected)
 {
     g_bIMUDisplayHold = bSelected;
     //if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_DISPLAY_HOLD);
-    if (g_ui32Panel == 3) WidgetPaint((tWidget *)&g_sCanvas4);
+    if (g_ui32Panel == 3) 
+        WidgetPaint((tWidget *)&g_sCanvas3);
 }
 
 // Plot callbacks
 void OnPlotModeChange3(tWidget *psWidget, uint32_t bSelected)
 {
-    // g_eIMUPlotMode = bSelected ? IMU_PLOT_MODE_RAW_AND_FILTERED : IMU_PLOT_MODE_FILTERED_ONLY;
+    g_ePlotMode = bSelected ? IMU_PLOT_MODE_RAW_AND_FILTERED : IMU_PLOT_MODE_FILTERED_ONLY;
     // if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);
-    // if (g_ui32Panel == 3) WidgetPaint((tWidget *)&g_sCanvas4);
+    if (g_ui32Panel == 4) WidgetPaint((tWidget *)&g_sCanvas4);
 }
 
 void OnPlotModeChange4(tWidget *psWidget, uint32_t bSelected)
 {
-    // g_bIMUDisplayHold = bSelected;
+    g_bDisplayHold = bSelected;
     // if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_DISPLAY_HOLD);
-    // if (g_ui32Panel == 3) WidgetPaint((tWidget *)&g_sCanvas4);
+    if (g_ui32Panel == 4) WidgetPaint((tWidget *)&g_sCanvas4);
+}
+
+// Plot callbacks // temp 
+void OnPlotModeChange5(tWidget *psWidget, uint32_t bSelected)
+{
+    g_ePlotMode = bSelected ? IMU_PLOT_MODE_RAW_AND_FILTERED : IMU_PLOT_MODE_FILTERED_ONLY;
+    // if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);
+    if (g_ui32Panel == 5) WidgetPaint((tWidget *)&g_sCanvas5);
+}
+
+void OnPlotModeChange6(tWidget *psWidget, uint32_t bSelected)
+{
+    g_bDisplayHold = bSelected;
+    //if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_DISPLAY_HOLD);
+    if (g_ui32Panel == 5) WidgetPaint((tWidget *)&g_sCanvas5);
 }
 
 void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
@@ -359,8 +402,8 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
     const uint32_t yMax = 2000;
     const uint32_t canvas_xMin = 30, canvas_xRange = 210;
     const uint32_t canvas_yMin = 50, canvas_yRange = 140;
-    static char buff1[4];
-    static char buff2[4];
+    // static char buff1[4];
+    // static char buff2[4];
     // Background
     GrContextForegroundSet(psContext, ClrBlack);
     sRect.i16XMin = canvas_xMin+2; 
@@ -386,11 +429,11 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
 
     static char modeStr[15];
      
-    if(g_eOPTPlotMode == IMU_PLOT_MODE_RAW_AND_FILTERED)
+    if(g_eIMUPlotMode == IMU_PLOT_MODE_RAW_AND_FILTERED)
     {
         usprintf(modeStr, "Raw + Filtered"); 
     }
-    else if(g_eOPTPlotMode == IMU_PLOT_MODE_FILTERED_ONLY) 
+    else if(g_eIMUPlotMode == IMU_PLOT_MODE_FILTERED_ONLY) 
     {
         usprintf(modeStr, "Filtered Only");     
     }
@@ -422,9 +465,9 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
         x1 = canvas_xMin + (ui32Idx * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
         x2 = canvas_xMin + ((ui32Idx + 1) * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
         
-        if (g_eOPTPlotMode == OPT_PLOT_MODE_RAW_AND_FILTERED)
+        if (g_eIMUPlotMode == IMU_PLOT_MODE_RAW_AND_FILTERED)
         {   
-            //usprintf(buff2, "%4d",filt1); 
+            // usprintf(buff2, "%3d",filt1); 
             // CanvasTextSet(&g_sLightValCanvas3, buff2);
             // WidgetPaint((tWidget *)&g_sLightValCanvas3);
             GrContextForegroundSet(psContext, ClrCyan);            
@@ -529,11 +572,6 @@ void OnOPTCanvasPaint(tWidget *psWidget, tContext *psContext)
             GrContextForegroundSet(psContext, ClrCyan);            
             GrLineDraw(psContext, x1, y1-3, x2, y2-3);
         }
-
-        // GrContextFontSet(psContext, &g_sFontCm12);
-        // GrContextForegroundSet(psContext, ClrYellow);
-        // usprintf(buff,"%3d",(int32_t)filt1);
-        // GrStringDrawCentered(psContext, buff, -1, 200, 65, 1);
         usprintf(buff1, "%4d",raw1); 
         CanvasTextSet(&g_sLightValCanvas, buff1);
         WidgetPaint((tWidget *)&g_sLightValCanvas);
@@ -592,7 +630,7 @@ void OnDashButtonPress(tWidget *psWidget)
 {
     uint32_t targetPanel = g_ui32Panel;
 
-    for (uint32_t i = 0; i < 5; i++)
+    for (uint32_t i = 0; i < 6; i++)
     {
         if (psWidget == (tWidget *)&g_psSideButtons[i])
         {
@@ -610,7 +648,7 @@ void OnDashButtonPress(tWidget *psWidget)
     }
 
     // Highlight active button
-    for (uint32_t i = 0; i < 5; i++)
+    for (uint32_t i = 0; i < 6; i++)
     {
         PushButtonFillColorSet(&g_psSideButtons[i],
             (i == g_ui32Panel) ? ClrBlue : ClrDarkBlue);
@@ -623,7 +661,15 @@ void OnStartButtonPress(tWidget *psWidget)
     SafeUARTprintf("START button pressed!\r\n");
     if (g_eMotorState == MOTOR_IDLE) 
     {
+        g_startDisplay = false;
         SetMotorState(MOTOR_STARTING);
+        // Hide the START button immediately
+        WidgetRemove((tWidget *)&g_sStartButton);
+        WidgetPaint((tWidget *)&g_sDashboard);
+    }
+    else
+    {
+        WidgetRemove((tWidget *)&g_sStartButton);
     }
 }
 
@@ -704,20 +750,20 @@ void OnFaultPanelPaint(tWidget *psWidget, tContext *psContext)
     // GrContextForegroundSet(psContext, ClrRed);
     // GrRectDraw(psContext, &sRect);
 
-    GrStringDraw(psContext, "FAULTS & SAFETY", -1, 50, 165, 0);
+    GrStringDraw(psContext, "FAULTS & SAFETY", -1, 50, 185, 0);
 
     // Faults
     GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_EBRAKE) ? ClrRed : ClrDarkGray);
-    GrStringDraw(psContext, "EBRAKE", -1, 50, 180, 0);
+    GrStringDraw(psContext, "EBRAKE", -1, 50, 200, 0);
 
     GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_OVERCURRENT) ? ClrRed : ClrDarkGray);
-    GrStringDraw(psContext, "OCURR", -1, 120, 180, 0);
+    GrStringDraw(psContext, "OCURR", -1, 120, 200, 0);
 
     GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_OVERTEMP) ? ClrRed : ClrDarkGray);
-    GrStringDraw(psContext, "OTEMP", -1, 50, 200, 0);
+    GrStringDraw(psContext, "OTEMP", -1, 50, 220, 0);
 
     GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_SENSOR) ? ClrRed : ClrDarkGray);
-    GrStringDraw(psContext, "SENS", -1, 120, 200, 0);
+    GrStringDraw(psContext, "SENS", -1, 120, 220, 0);
 
     // Warnings
     GrContextForegroundSet(psContext, ClrYellow);
@@ -771,11 +817,6 @@ void UpdateMotorStateCanvas(void)
     WidgetPaint((tWidget *)&g_sMotorStateCanvas);
 }
 
-void UpdateFaultPanel(void)
-{
-    WidgetPaint((tWidget *)&g_sFaultPanel);
-}
-
 // Optional: Force full dashboard repaint (use sparingly)
 void RefreshDashboard(void)
 {
@@ -788,12 +829,17 @@ void SetMotorState(MotorState_t newState)
         return;
 
     g_eMotorState = newState;
+    
 
     if (xEventGroup)
         xEventGroupSetBits(xEventGroup, EVENT_MOTOR_STATE_CHANGE);
 
     if (g_ui32Panel == 0)
+    {
         UpdateMotorStateCanvas();
+        UpdateFaultPanel();
+    }
+        
 }
 
 void OnDashboardSliderChange(tWidget *psWidget, int32_t i32Value)
@@ -958,4 +1004,41 @@ void OnLuxMinSliderChange(tWidget *psWidget, int32_t i32Value)
             WidgetPaint((tWidget *)&g_sEngineCanvas);
         }
     }
+}
+
+void UpdateFaultPanel(void)
+{
+    // Update the fault text panel
+    WidgetPaint((tWidget *)&g_sFaultPanel);
+
+    // === CONTROL ACK FAULT BUTTON VISIBILITY ===
+    if (g_ui32ActiveFaults != 0)
+    {
+        // Show button (red + text)        
+        WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sClearFaultButton);
+        WidgetPaint((tWidget *)&g_sDashboard);
+
+        PushButtonFillColorSet(&g_sClearFaultButton, ClrRed);
+        PushButtonTextSet(&g_sClearFaultButton, "ACK FAULT");
+    }
+    else
+    {
+        // Hide button completely
+        WidgetRemove((tWidget *)&g_sClearFaultButton);
+        PushButtonFillColorSet(&g_sClearFaultButton, ClrDarkGray);
+        PushButtonTextSet(&g_sClearFaultButton, "");
+    }
+
+    WidgetPaint((tWidget *)&g_sClearFaultButton);
+}
+
+void OnClearFaultButtonPress(tWidget *psWidget)
+{
+    SafeUARTprintf("ACK FAULT button pressed - Clearing faults and resuming motor!\r\n");
+    
+    g_bFaultAcknowledged = true;
+    g_ui32ActiveFaults = 0;
+    SetMotorState(MOTOR_IDLE);
+    
+    UpdateFaultPanel();        // ← this now automatically hides the button
 }

@@ -59,20 +59,21 @@
 #include "driverlib/timer.h" 
 #include "widgets.h"
 #include "system_utils.h"
+#include "temp_humidity.h" 
+
 // ====================== Message Object ======================
-struct MsgObj
+typedef struct __attribute__((aligned(4))) MsgObj
 {
     uint8_t  id;
-    int32_t val;
+    int32_t  val;
     uint32_t avg;
     uint32_t tick;
     uint8_t  flag;
     uint32_t seq;
 
-    // Extra payload fields to let one queue message carry both temperature and humidity
-    int32_t val2;
-    int32_t avg2;
-};
+    int32_t  val2;
+    int32_t  avg2;
+} MsgObj;
 
 // ====================== Globals - EXTERN ONLY ======================
 extern uint32_t g_ui32SysClock;
@@ -90,7 +91,9 @@ extern tContext sContext;
 extern bool g_bCoolingOn;
 extern bool g_bHeatingOn;
 extern bool g_bSHT31Valid;
-
+extern bool g_faultSwitch;
+extern bool g_startDisplay;
+extern bool g_bFaultAcknowledged;
 extern int32_t  g_i32CabinTempCx100;
 extern uint32_t g_ui32CabinHumidityRHx100;
 
@@ -159,6 +162,7 @@ void SafeUARTprintf(const char *pcString, ...);
 void xButtonsHandler(void);
 void EnableHighResTimer(void);
 void prvSetMotorSpeed();
+void xBMI160DRDYHandler(void);
 
 extern bool sensorOpt3001Init(void);
 extern bool sensorOpt3001Read(uint16_t *rawData);
@@ -166,7 +170,7 @@ extern void sensorOpt3001Convert(uint16_t rawData, float *convertedLux);
 
 extern bool sensorBMI160Init(void);
 extern bool sensorBMI160ReadAccel(bmi160_accel_raw_t *raw);
-extern void sensorBMI160ConvertAccel(const bmi160_accel_raw_t *raw, bmi160_accel_uint_t *g);
+extern void sensorBMI160ConvertAccel(const bmi160_accel_raw_t *raw, bmi160_accel_float_t *g);
 
 extern void i2cOptDriverInit(void);
 extern void calcTimeCount(void);

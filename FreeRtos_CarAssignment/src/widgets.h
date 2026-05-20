@@ -4,6 +4,23 @@
 #include "taskman.h"
 
 // ====================== Extern Declarations for All Widgets ======================
+// Plot mode
+typedef enum
+{
+    OPT_PLOT_MODE_FILTERED_ONLY = 0,
+    OPT_PLOT_MODE_RAW_AND_FILTERED,
+    IMU_PLOT_MODE_FILTERED_ONLY,
+    IMU_PLOT_MODE_RAW_AND_FILTERED
+} PlotMode_t;
+
+// ====================== Motor State ======================
+typedef enum
+{
+    MOTOR_IDLE = 0,
+    MOTOR_STARTING,
+    MOTOR_RUNNING,
+    MOTOR_FAULT
+} MotorState_t;
 
 // Main Panels
 extern tCanvasWidget g_psPanels[];
@@ -14,6 +31,7 @@ extern tCanvasWidget g_psCheckBoxIndicators[];
 extern tCheckBoxWidget g_psCheckBoxes[];
 extern tCanvasWidget g_psPushButtonIndicators[];
 extern tPushButtonWidget g_psPushButtons[];
+extern tPushButtonWidget g_sClearFaultButton;
 
 extern tCanvasWidget g_sAccelValueCanvas;
 extern tCanvasWidget g_sDistanceCanvas;
@@ -38,16 +56,24 @@ void OnLuxMinSliderChange(tWidget *psWidget, int32_t i32Value);
 extern tSliderWidget g_sLuxMinSlider;
 
 // Panel 2 - Plotting
+extern tCanvasWidget g_sCanvas1;
 extern tCanvasWidget g_sCanvas2;
 extern tCanvasWidget g_sCanvas3;
+extern tCanvasWidget g_sCanvas4;
+extern tCanvasWidget g_sCanvas5;
 
 extern tCheckBoxWidget g_sPlotModeCheckBox;
 extern tCheckBoxWidget g_sPlotModeCheckBox2;
+
 extern tCheckBoxWidget g_sPlotModeCheckBox3;
 extern tCheckBoxWidget g_sPlotModeCheckBox4;
+
 extern tCheckBoxWidget g_sPlotModeCheckBox5;
 extern tCheckBoxWidget g_sPlotModeCheckBox6;
-tCanvasWidget g_sCanvas1;
+
+extern tCheckBoxWidget g_sPlotModeCheckBox7;
+extern tCheckBoxWidget g_sPlotModeCheckBox8;
+
 
 extern volatile uint8_t  g_ui8Hours, g_ui8Minutes, g_ui8Seconds;
 extern volatile uint8_t  g_ui8Day, g_ui8Month;
@@ -55,9 +81,6 @@ extern volatile uint16_t g_ui16Year;
 extern volatile int16_t  g_i16MotorValue;
 extern uint16_t g_ui32Speed;
 // Bottom Navigation
-tPushButtonWidget g_sPrevious;
-tCanvasWidget g_sTitle;
-tPushButtonWidget g_sNext;
 extern char *g_pcPanei32Names[];
 
 // ====================== Globals (EXTERN only) ======================
@@ -68,28 +91,13 @@ extern tContext sContext;
 extern bool g_bOPTDisplayHold;
 extern bool g_bIMUDisplayHold;
 extern bool g_bDisplayHold;
-
-// Plot mode
-typedef enum
-{
-    OPT_PLOT_MODE_FILTERED_ONLY = 0,
-    OPT_PLOT_MODE_RAW_AND_FILTERED,
-    IMU_PLOT_MODE_FILTERED_ONLY,
-    IMU_PLOT_MODE_RAW_AND_FILTERED
-} PlotMode_t;
-
-// ====================== Motor State ======================
-typedef enum
-{
-    MOTOR_IDLE = 0,
-    MOTOR_STARTING,
-    MOTOR_RUNNING,
-    MOTOR_FAULT
-} MotorState_t;
+extern bool g_faultSwitch;
+extern bool g_startDisplay;
+extern bool g_bFaultAcknowledged;
 
 tCanvasWidget g_sDashboard;
 tPushButtonWidget g_sStartButton;
-tPushButtonWidget g_psSideButtons[5];
+tPushButtonWidget g_psSideButtons[6];
 
 // Widget callbacks
 void OnIntroPaint(tWidget *psWidget, tContext *psContext);
@@ -109,6 +117,12 @@ void OnIMUPlotModeChange2(tWidget *psWidget, uint32_t bSelected);
 
 void OnPlotModeChange3(tWidget *psWidget, uint32_t bSelected);
 void OnPlotModeChange4(tWidget *psWidget, uint32_t bSelected);
+
+void OnPlotModeChange5(tWidget *psWidget, uint32_t bSelected);
+void OnPlotModeChange6(tWidget *psWidget, uint32_t bSelected);
+void UpdateFaultPanel(void);
+
+void OnClearFaultButtonPress(tWidget *psWidget);
 
 void OnNext(tWidget *psWidget);
 void OnPrevious(tWidget *psWidget);

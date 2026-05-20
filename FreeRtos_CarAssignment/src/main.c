@@ -114,7 +114,7 @@ int main( void )
 
     /* Create the binary semaphore used to synchronize the button ISR and the
      * button processing task. */
-    xButtonSemaphore1 = xSemaphoreCreateBinary();    
+    xButtonSemaphore1 = xSemaphoreCreateBinary();
     xOptSemaphore = xSemaphoreCreateBinary();
     xPrintMutex = xSemaphoreCreateMutex();
     xI2CMutex = xSemaphoreCreateMutex();
