@@ -125,10 +125,8 @@ void prvLEDTasksw1(void *pvParameters)
                 SafeUARTprintf(uiIndex_2 ? "Sensor output 2 - Reading Thresholds\r\n" : "Sensor output 1 - Serial plot\r\n");
             }
 
-            LEDWrite(LED_D1|LED_D2|LED_D3|LED_D4, 0);
 
-            if (!uiIndex)  LEDWrite(LED_D1, LED_D1);
-            if (!uiIndex_2) LEDWrite(LED_D2, LED_D2);
+
         }
     }
 }
@@ -239,7 +237,7 @@ static void readerTask(void *pvParameters)
     struct MsgObj xCurrentMsgObj;
     struct MsgObj latestSensorData[SENSOR_ID_SHT31 + 1];
     bool hasLatest[SENSOR_ID_SHT31 + 1] = {false};
-
+    static uint8_t lighttimer = 10;
     BaseType_t xRecvStatus;
     EventBits_t uxBits;
     uint32_t messagesDiscarded = 0;
@@ -255,8 +253,8 @@ static void readerTask(void *pvParameters)
         uxBits = xEventGroupWaitBits(xEventGroup,
                                      (EVENT_SENSOR_MISSED |
                                       EVENT_QUEUE_FULL |
-                                      EVENT_HIGH_THRESHOLD |
-                                      EVENT_LOW_THRESHOLD |
+                                      EVENT_LUXHIGH_THRESHOLD |
+                                      EVENT_LUXLOW_THRESHOLD |
                                       EVENT_SENSOR_DATA_READY |
                                       EVENT_DISPLAY_HOLD |
                                       EVENT_MOTOR_STATE_CHANGE),
@@ -281,14 +279,31 @@ static void readerTask(void *pvParameters)
             SafeUARTprintf("EVENT: QUEUE FULL! Message dropped.\r\n");
         }
 
-        if (uxBits & EVENT_HIGH_THRESHOLD)
+        if (uxBits & EVENT_LUXHIGH_THRESHOLD)
         {
             SafeUARTprintf("EVENT: HIGH THRESHOLD crossed! (Filtered > 1000 lux)\r\n");
         }
 
-        if (uxBits & EVENT_LOW_THRESHOLD)
+        if(uxBits & EVENT_LUXLOW_THRESHOLD)
         {
-            SafeUARTprintf("EVENT: LOW THRESHOLD crossed! (Filtered < 10 lux)\r\n");
+            static char buff1[50];
+            usprintf(buff1,"EVENT: LUXLOW THRESHOLD (Filtered < %d lux)\r\n",g_ui32LuxMinThreshold);
+            SafeUARTprintf(buff1);            
+            //if (!uiIndex)  LEDWrite(LED_D1, LED_D1);
+            LEDWrite(LED_D1, LED_D1);
+            lighttimer = 10;
+        }
+        else
+        {   
+            if(lighttimer > 1)
+            {
+                lighttimer--;
+            }
+            else
+            {
+                LEDWrite(LED_D1|LED_D2|LED_D3|LED_D4, 0);
+            }
+            
         }
 
         // Reset the local "latest message" cache each reader cycle
@@ -345,11 +360,16 @@ static void readerTask(void *pvParameters)
                         missingSampleCount++;
                         break;
                     }
-                    // SafeUARTprintf("RX xQueue id=0x%02x val1=%u avg1=%u flag=%u \r\n",
-                    //                 (unsigned int)pData->id,
-                    //                 (unsigned int)pData->val,
-                    //                 (unsigned int)pData->avg2,                            
-                    //                 (unsigned int)pData->flag);
+                    SafeUARTprintf("RX xQueue id=0x%02x val1=%u avg1=%u flag=%u \r\n",
+                                    pData->id,
+                                    (unsigned int)pData->val,
+                                    (unsigned int)pData->avg2,                            
+                                    (unsigned int)pData->flag);
+
+                    if((unsigned int)pData->avg < g_ui32LuxMinThreshold)
+                    {
+                        xEventGroupSetBits(xEventGroup, EVENT_LUXLOW_THRESHOLD);
+                    }
 
                     g_plotOPTRawHistory[g_plotOPTIndex] = (uint32_t)pData->val;
                     g_plotOPTFiltHistory[g_plotOPTIndex] = pData->avg;
@@ -620,7 +640,10 @@ void prvDisplayTask(void *pvParameters)
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sMotorStateCanvas);
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultPanel);  
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sStartButton);
-    //WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sClearFaultButton);
+    
+    WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultButtonCanvas);
+    WidgetAdd((tWidget *)&g_sFaultButtonCanvas, (tWidget *)&g_sClearFaultButton);
+    g_bFaultButtonVisible = true;   // initial state
 
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sCrashTolSlider);
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sAccelMaxSlider);
@@ -757,10 +780,9 @@ static void prvMotorTask(void *pvParameters)
             case MOTOR_IDLE:
                     // Simulate start request (e.g. from button or command)
                     //vTaskDelay(pdMS_TO_TICKS(3000));        // Stay in IDLE for 3 seconds
+                    
                     //SetMotorState(MOTOR_STARTING);
                     g_startDisplay = true;
-                    WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sStartButton);
-                    //WidgetPaint((tWidget *)&g_sDashboard);
 
                 break;
 

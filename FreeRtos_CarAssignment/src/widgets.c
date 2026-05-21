@@ -5,7 +5,8 @@
 #include "drivers/Kentec320x240x16_ssd2119_spi.h"
 #include "utils/uartstdio.h"
 
-// Formats values stored as signed x100
+
+
 static void FormatSignedX100(char *buf, const char *label, int32_t value_x100, const char *unit)
 {
     const char *sign = "";
@@ -44,7 +45,7 @@ static void FormatUnsignedX100(char *buf, const char *label, uint32_t value_x100
 
 // ====================== PANEL 1 - ENGINE ======================
 Canvas(g_sEngineCanvas, g_psPanels + 1, 0, 0,
-       &g_sKentec320x240x16_SSD2119, 10, 40, 220, 180, 
+       &g_sKentec320x240x16_SSD2119, 10, 40, 220, 200, 
        CANVAS_STYLE_OUTLINE | CANVAS_STYLE_APP_DRAWN, 0, ClrGray, 
        0, 0, 0, 0, OnEngineCanvasPaint);
 
@@ -55,46 +56,46 @@ tSliderWidget g_sAccelMaxSlider = SliderStruct(&g_sEngineCanvas,
                                              NULL,                  // Next sibling
                                              0,                     // No children
                                              &g_sKentec320x240x16_SSD2119,
-                                             60, 60, 100, 20,       // x, y, width, height → Vertical
+                                             60, 60, 100, 15,       // x, y, width, height → Vertical
                                              0, 20, 10,            // min, max, initial value
                                              (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | 
                                               SL_STYLE_OUTLINE | SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),                                              
                                              ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
-                                             &g_sFontCm16, "10", 0, 0, OnAccelMaxSliderChange);
+                                             &g_sFontCm14, "10", 0, 0, OnAccelMaxSliderChange);
 
 
 tSliderWidget g_sDetRangeSlider = SliderStruct(&g_sEngineCanvas, 
                                              NULL,                  // Next sibling
                                              0,                     // No children
                                              &g_sKentec320x240x16_SSD2119,
-                                             60, 90, 85, 20,       // x, y, width, height → Vertical
-                                             0, 330, 100,            // min, max, initial value
+                                             60, 100, 100, 15,       // x, y, width, height → Vertical
+                                             0, 330, 1000,            // min, max, initial value
                                              (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | 
                                               SL_STYLE_OUTLINE | SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),                                              
                                              ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
-                                             &g_sFontCm16, "10", 0, 0, OnDetRangeSliderChange);     
+                                             &g_sFontCm14, "330", 0, 0, OnDetRangeSliderChange);     
                                              
 tSliderWidget g_sCrashTolSlider = SliderStruct(&g_sEngineCanvas, 
                                              NULL,                  // Next sibling
                                              0,                     // No children
                                              &g_sKentec320x240x16_SSD2119,
-                                             60, 160, 100, 20,       // x, y, width, height → Vertical
+                                             60, 140, 100, 15,       // x, y, width, height → Vertical
                                              0, 100, 50,            // min, max, initial value
                                              (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | 
                                               SL_STYLE_OUTLINE | SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),                                              
                                              ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
-                                             &g_sFontCm16, "50", 0, 0, OnCrashTolSliderChange);
+                                             &g_sFontCm14, "50", 0, 0, OnCrashTolSliderChange);
                                              
 tSliderWidget g_sLuxMinSlider = SliderStruct(&g_sEngineCanvas, 
                                              NULL,                  // Next sibling
                                              0,                     // No children
                                              &g_sKentec320x240x16_SSD2119,
-                                             60, 200, 85, 20,       // x, y, width, height → Vertical
+                                             60, 180, 100, 15,       // x, y, width, height → Vertical
                                              3, 40, 10,            // min, max, initial value
                                              (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | 
                                               SL_STYLE_OUTLINE | SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),                                              
                                              ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
-                                             &g_sFontCm16, "10", 0, 0, OnLuxMinSliderChange);  
+                                             &g_sFontCm14, "10", 0, 0, OnLuxMinSliderChange);  
 
 
 // Panel 2 - Plotting
@@ -256,12 +257,19 @@ tCanvasWidget g_sFaultPanel = CanvasStruct(&g_sDashboard, &g_sMotorStateCanvas, 
                                             CANVAS_STYLE_FILL | CANVAS_STYLE_OUTLINE | CANVAS_STYLE_APP_DRAWN,
                                             ClrBlack, ClrRed, ClrWhite, &g_sFontCm16, "", 0, OnFaultPanelPaint);
 
-// ====================== NEW: ACK FAULT BUTTON (visibility controlled) ======================
-tPushButtonWidget g_sClearFaultButton = RectangularButtonStruct(&g_sDashboard, 0, 0,
-                                            &g_sKentec320x240x16_SSD2119, 195, 115, 115, 45,
-                                            PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
-                                            ClrRed, ClrBlack, ClrWhite, ClrWhite,
-                                            &g_sFontCm18, "ACK FAULT", 0, 0, 0, 0, OnClearFaultButtonPress);
+// ====================== DEDICATED CANVAS FOR ACK FAULT BUTTON ======================
+tCanvasWidget g_sFaultButtonCanvas = CanvasStruct(&g_sDashboard, 0, 0,
+                                                 &g_sKentec320x240x16_SSD2119,
+                                                 198, 160, 30, 20,          // x, y, width, height
+                                                 CANVAS_STYLE_FILL,           // simple black background
+                                                 ClrBlue, 0, 0, 0, 0, 0, 0); // no text, no outline        
+
+// ====================== ACK FAULT BUTTON (now inside its own canvas) ======================
+tPushButtonWidget g_sClearFaultButton = RectangularButtonStruct(&g_sFaultButtonCanvas, 0, 0,
+                                        &g_sKentec320x240x16_SSD2119, 198, 160, 30, 20,     // relative coords inside canvas
+                                        PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
+                                        ClrRed, ClrBlack, ClrWhite, ClrWhite,
+                                        &g_sFontCm12, "XF", 0, 0, 0, 0, OnClearFaultButtonPress);
 
 // ====================== DASHBOARD SLIDER ======================
 tSliderWidget g_sDashboardSlider = SliderStruct(&g_sDashboard, 
@@ -281,6 +289,7 @@ tPushButtonWidget g_sStartButton = RectangularButtonStruct(&g_sDashboard, 0, 0,
                                     PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
                                     ClrRed, ClrBlack, ClrWhite, ClrWhite,
                                     &g_sFontCm22, "START", 0, 0, 0, 0, OnStartButtonPress);
+
 
 
 // ====================== PERMANENT SIDE BUTTONS ======================
@@ -583,7 +592,7 @@ void OnOPTCanvasPaint(tWidget *psWidget, tContext *psContext)
 // Global value for the speed / gauge
 // Temp hooks for later
 //uint32_t g_ui32Speed = 80;        
-uint32_t g_ui32Temp = 20;
+//uint32_t g_ui32Temp = 20;
 
 void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
 {
@@ -881,13 +890,13 @@ void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext)
     GrStringDraw(psContext, buf, -1, 40, 40, 0);
 
     usprintf(buf, "Range Tr Dist: %3d cm", g_ui32DetRangeVal);
-    GrStringDraw(psContext, buf, -1, 40, 70, 0);
+    GrStringDraw(psContext, buf, -1, 40, 80, 0);
 
     usprintf(buf, "Crash Threshold: %3d", g_ui32CrashThreshold);
-    GrStringDraw(psContext, buf, -1, 40, 100, 0);
+    GrStringDraw(psContext, buf, -1, 40, 120, 0);
 
     usprintf(buf, "Min Lux Threshold: %3d", g_ui32LuxMinThreshold);
-    GrStringDraw(psContext, buf, -1, 40, 130, 0);
+    GrStringDraw(psContext, buf, -1, 40, 160, 0);
 
     // SHT31 values are placed below existing controls
     // prevents humidity text overlapping with Min Lux Threshold
@@ -896,10 +905,10 @@ void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext)
         GrContextForegroundSet(psContext, ClrWhite);
 
         FormatSignedX100(buf, "Cabin Temp: ", g_i32CabinTempCx100, "C");
-        GrStringDraw(psContext, buf, -1, 40, 160, 0);
+        GrStringDraw(psContext, buf, -1, 40, 180, 0);
 
         FormatUnsignedX100(buf, "Humidity: ", g_ui32CabinHumidityRHx100, "%RH");
-        GrStringDraw(psContext, buf, -1, 40, 185, 0);
+        GrStringDraw(psContext, buf, -1, 40, 200, 0);
 
         if (g_bCoolingOn)
         {
@@ -920,7 +929,7 @@ void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext)
     else
     {
         GrContextForegroundSet(psContext, ClrRed);
-        GrStringDraw(psContext, "SHT31: No Data", -1, 40, 160, 0);
+        GrStringDraw(psContext, "Climate: No Data", -1, 40, 210, 0);
     }
 
     GrContextForegroundSet(psContext, ClrWhite);
@@ -1008,33 +1017,21 @@ void OnLuxMinSliderChange(tWidget *psWidget, int32_t i32Value)
 
 void UpdateFaultPanel(void)
 {
-    // Always repaint the fault text panel
-    //WidgetPaint((tWidget *)&g_sFaultPanel);
+    // Update fault text panel
+    WidgetPaint((tWidget *)&g_sFaultPanel);
 
-    bool shouldBeVisible = (g_ui32ActiveFaults != 0);
+    static bool lastFaultState = false;
+    bool hasFault = (g_ui32ActiveFaults != 0);
 
-    // Only add/remove if the state actually changed (prevents glitches)
-    if (shouldBeVisible && !g_bFaultButtonVisible)
-    {
-        // SHOW button
-        WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sClearFaultButton);
-        PushButtonFillColorSet(&g_sClearFaultButton, ClrRed);
-        PushButtonTextColorSet(&g_sClearFaultButton, ClrWhite);
-        PushButtonTextSet(&g_sClearFaultButton, "ACK FAULT");
-        g_bFaultButtonVisible = true;
-    }
-    else if (!shouldBeVisible && g_bFaultButtonVisible)
-    {
-        // HIDE button
-        WidgetRemove((tWidget *)&g_sClearFaultButton);
-        PushButtonFillColorSet(&g_sClearFaultButton, ClrBlack);
-        PushButtonTextColorSet(&g_sClearFaultButton, ClrBlack);
-        PushButtonTextSet(&g_sClearFaultButton, "");
-        g_bFaultButtonVisible = false;
-    }
+    if (hasFault == lastFaultState)
+        return;
 
-    // Force full dashboard repaint so the button area is cleared/redrawn
-    //WidgetPaint((tWidget *)&g_sDashboard);
+    lastFaultState = hasFault;
+
+    if (hasFault)
+        ShowAckFaultButton();
+    else
+        HideAckFaultButton();
 }
 
 void OnClearFaultButtonPress(tWidget *psWidget)
@@ -1049,4 +1046,24 @@ void OnClearFaultButtonPress(tWidget *psWidget)
     
     // UpdateFaultPanel() will now correctly hide it
     UpdateFaultPanel();
+}
+
+
+void ShowAckFaultButton(void)
+{
+    if (!g_bFaultButtonVisible)
+    {
+        WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultButtonCanvas);
+        g_bFaultButtonVisible = true;
+    }
+    WidgetPaint((tWidget *)&g_sFaultButtonCanvas);
+}
+
+void HideAckFaultButton(void)
+{
+    if (g_bFaultButtonVisible)
+    {
+        WidgetRemove((tWidget *)&g_sFaultButtonCanvas);
+        g_bFaultButtonVisible = false;
+    }
 }

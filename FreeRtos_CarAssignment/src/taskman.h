@@ -140,8 +140,8 @@ extern uint32_t g_ui32ActiveWarnings;
 extern uint32_t g_ui32ActiveSafety;
 
 // Event Bits
-#define EVENT_HIGH_THRESHOLD     (1U << 0)
-#define EVENT_LOW_THRESHOLD      (1U << 1)
+#define EVENT_LUXHIGH_THRESHOLD     (1U << 0)
+#define EVENT_LUXLOW_THRESHOLD      (1U << 1)
 #define EVENT_SENSOR_MISSED      (1U << 2)
 #define EVENT_QUEUE_FULL         (1U << 3)
 #define EVENT_BTN_TOGGLE_PLOT    (1U << 4)

@@ -124,6 +124,8 @@ void OnPlotModeChange6(tWidget *psWidget, uint32_t bSelected);
 void UpdateFaultPanel(void);
 
 void OnClearFaultButtonPress(tWidget *psWidget);
+void ShowAckFaultButton(void);
+void HideAckFaultButton(void);
 
 void OnNext(tWidget *psWidget);
 void OnPrevious(tWidget *psWidget);
@@ -146,6 +148,8 @@ extern uint32_t g_ui32FilteredBodyAccel;
 extern uint32_t g_ui32CurrentDistance;
 // ====================== New Widgets (Dashboard) ======================
 tCanvasWidget g_sMotorStateCanvas;
+tCanvasWidget g_sFaultButtonCanvas;
+
 extern tCanvasWidget g_sFaultPanel;
 extern tSliderWidget g_sDashboardSlider;
 extern tCanvasWidget g_sTimeCanvas;
