@@ -1008,28 +1008,33 @@ void OnLuxMinSliderChange(tWidget *psWidget, int32_t i32Value)
 
 void UpdateFaultPanel(void)
 {
-    // Update the fault text panel
-    WidgetPaint((tWidget *)&g_sFaultPanel);
+    // Always repaint the fault text panel
+    //WidgetPaint((tWidget *)&g_sFaultPanel);
 
-    // === CONTROL ACK FAULT BUTTON VISIBILITY ===
-    if (g_ui32ActiveFaults != 0)
+    bool shouldBeVisible = (g_ui32ActiveFaults != 0);
+
+    // Only add/remove if the state actually changed (prevents glitches)
+    if (shouldBeVisible && !g_bFaultButtonVisible)
     {
-        // Show button (red + text)        
+        // SHOW button
         WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sClearFaultButton);
-        WidgetPaint((tWidget *)&g_sDashboard);
-
         PushButtonFillColorSet(&g_sClearFaultButton, ClrRed);
+        PushButtonTextColorSet(&g_sClearFaultButton, ClrWhite);
         PushButtonTextSet(&g_sClearFaultButton, "ACK FAULT");
+        g_bFaultButtonVisible = true;
     }
-    else
+    else if (!shouldBeVisible && g_bFaultButtonVisible)
     {
-        // Hide button completely
+        // HIDE button
         WidgetRemove((tWidget *)&g_sClearFaultButton);
-        PushButtonFillColorSet(&g_sClearFaultButton, ClrDarkGray);
+        PushButtonFillColorSet(&g_sClearFaultButton, ClrBlack);
+        PushButtonTextColorSet(&g_sClearFaultButton, ClrBlack);
         PushButtonTextSet(&g_sClearFaultButton, "");
+        g_bFaultButtonVisible = false;
     }
 
-    WidgetPaint((tWidget *)&g_sClearFaultButton);
+    // Force full dashboard repaint so the button area is cleared/redrawn
+    //WidgetPaint((tWidget *)&g_sDashboard);
 }
 
 void OnClearFaultButtonPress(tWidget *psWidget)
@@ -1038,7 +1043,10 @@ void OnClearFaultButtonPress(tWidget *psWidget)
     
     g_bFaultAcknowledged = true;
     g_ui32ActiveFaults = 0;
+    g_bFaultButtonVisible = false;          // force hidden state
+    
     SetMotorState(MOTOR_IDLE);
     
-    UpdateFaultPanel();        // ← this now automatically hides the button
+    // UpdateFaultPanel() will now correctly hide it
+    UpdateFaultPanel();
 }

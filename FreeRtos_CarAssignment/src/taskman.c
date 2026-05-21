@@ -68,6 +68,8 @@ bool g_bHeatingOn = false;
 bool g_bCoolingOn = false;
 bool g_bSHT31Valid = false;
 bool g_bFaultAcknowledged = false;
+bool g_bFaultButtonVisible = false;
+
 // Store temp/humidity as integer x100 to avoid floating point in display code
 int32_t  g_i32CabinTempCx100 = 0;
 uint32_t g_ui32CabinHumidityRHx100 = 0;
@@ -343,11 +345,11 @@ static void readerTask(void *pvParameters)
                         missingSampleCount++;
                         break;
                     }
-                    SafeUARTprintf("RX xQueue id=0x%02x val1=%u avg1=%u flag=%u \r\n",
-                                    (unsigned int)pData->id,
-                                    (unsigned int)pData->val,
-                                    (unsigned int)pData->avg2,                            
-                                    (unsigned int)pData->flag);
+                    // SafeUARTprintf("RX xQueue id=0x%02x val1=%u avg1=%u flag=%u \r\n",
+                    //                 (unsigned int)pData->id,
+                    //                 (unsigned int)pData->val,
+                    //                 (unsigned int)pData->avg2,                            
+                    //                 (unsigned int)pData->flag);
 
                     g_plotOPTRawHistory[g_plotOPTIndex] = (uint32_t)pData->val;
                     g_plotOPTFiltHistory[g_plotOPTIndex] = pData->avg;
@@ -367,9 +369,9 @@ static void readerTask(void *pvParameters)
                     {
                         break;
                     }
-                    SafeUARTprintf("RX xQueue id=0x%02x val1=%u \r\n",
-                                    (unsigned int)pData->id,
-                                    (unsigned int)pData->val);
+                    // SafeUARTprintf("RX xQueue id=0x%02x val1=%u \r\n",
+                    //                 (unsigned int)pData->id,
+                    //                 (unsigned int)pData->val);
            
                     g_plotIMURawHistory[g_plotIMUIndex] = (uint32_t)pData->val;
                     g_plotIMUFiltHistory[g_plotIMUIndex] = pData->avg;
@@ -450,7 +452,6 @@ static void readerTask(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(mainRECEIVER_DELAY_MS));
     }
 }
-
 
 static void prvIMUTask(void *pvParameters)
 {
@@ -619,7 +620,7 @@ void prvDisplayTask(void *pvParameters)
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sMotorStateCanvas);
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultPanel);  
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sStartButton);
-    WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sClearFaultButton);
+    //WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sClearFaultButton);
 
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sCrashTolSlider);
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sAccelMaxSlider);

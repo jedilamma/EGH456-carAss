@@ -94,6 +94,7 @@ extern bool g_bDisplayHold;
 extern bool g_faultSwitch;
 extern bool g_startDisplay;
 extern bool g_bFaultAcknowledged;
+extern bool g_bFaultButtonVisible;
 
 tCanvasWidget g_sDashboard;
 tPushButtonWidget g_sStartButton;
