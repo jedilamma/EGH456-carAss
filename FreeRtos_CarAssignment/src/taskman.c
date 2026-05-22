@@ -77,7 +77,7 @@ uint32_t g_ui32CabinHumidityRHx100 = 0;
 int32_t  g_i32HeatingThresholdCx100 = 1800;
 int32_t  g_i32CoolingThresholdCx100 = 2600;
 
-uint16_t g_ui32Speed = 0;
+uint32_t g_ui32Speed = 0;
 
 tContext sContext;
 
@@ -767,73 +767,106 @@ void xTimerHandler(void)
 
 static void prvMotorTask(void *pvParameters)
 {
+    TickType_t xLastWakeTime;
+    MotorStatus_t xMotorStatus;
+    MotorControlFault_t eFaultReason;
+    uint32_t ui32RequestedSpeed;
+    MotorState_t eGuiMotorState;
+    bool bGuiFaultActive;
+
     (void)pvParameters;
     
     SafeUARTprintf("=== Motor Task Started ===\r\n");
-    
-    TickType_t xLastWakeTime = xTaskGetTickCount();
+    Motor_Init();
+
+    xLastWakeTime = xTaskGetTickCount();
     
     for (;;)
     {
-        switch (g_eMotorState)
+        ui32RequestedSpeed = g_ui32Speed;
+        eGuiMotorState = g_eMotorState;
+        bGuiFaultActive = ((g_ui32ActiveFaults & (FAULT_EBRAKE | FAULT_OVERCURRENT)) != 0U) ||
+                          (eGuiMotorState == MOTOR_FAULT);
+        eFaultReason = MOTOR_CONTROL_FAULT_MANUAL_ESTOP;
+
+        if ((g_ui32ActiveFaults & FAULT_OVERCURRENT) != 0U)
         {
-            case MOTOR_IDLE:
-                    // Simulate start request (e.g. from button or command)
-                    //vTaskDelay(pdMS_TO_TICKS(3000));        // Stay in IDLE for 3 seconds
-                    
-                    //SetMotorState(MOTOR_STARTING);
-                    g_startDisplay = true;
+            eFaultReason = MOTOR_CONTROL_FAULT_POWER;
+        }
+        else if (g_ui32FilteredBodyAccel > g_ui32CrashThreshold)
+        {
+            eFaultReason = MOTOR_CONTROL_FAULT_ACCELERATION;
+        }
+        else if (g_ui32CurrentDistance < g_ui32DetRangeVal)
+        {
+            eFaultReason = MOTOR_CONTROL_FAULT_DISTANCE;
+        }
 
-                break;
+        if (g_bFaultAcknowledged)
+        {
+            Motor_AcknowledgeFault();
+            g_bFaultAcknowledged = false;
+        }
+        else if (bGuiFaultActive)
+        {
+            Motor_EStop(eFaultReason);
+        }
+        else if ((eGuiMotorState == MOTOR_STARTING) ||
+                 (eGuiMotorState == MOTOR_RUNNING))
+        {
+            Motor_SetSpeed((float)ui32RequestedSpeed);
 
-            case MOTOR_STARTING:
-                    SafeUARTprintf("Motor STARTING...\r\n");
-                    vTaskDelay(pdMS_TO_TICKS(2000));        // Starting sequence
-                    SetMotorState(MOTOR_RUNNING);
-                break;
+            if (ui32RequestedSpeed > 0U)
+            {
+                Motor_Start();
+            }
+        }
+        else
+        {
+            g_startDisplay = true;
+            Motor_SetSpeed(0.0f);
+        }
 
-            case MOTOR_RUNNING:
-                SafeUARTprintf("Motor RUNNING - Normal operation\r\n");
-                vTaskDelay(pdMS_TO_TICKS(8000));        // Run for 8 seconds
-                
-                // Random chance to create a fault (for demo)
-                if ((rand() % 5) == 0)                  // ~20% chance
-                    SetMotorState(MOTOR_FAULT);
-                else
-                    SetMotorState(MOTOR_IDLE);          // Back to idle
-                break;
+        Motor_ControlStep(MOTOR_CONTROL_PERIOD_MS);
+        xMotorStatus = Motor_GetStatus();
 
-            case MOTOR_FAULT:
-                // SafeUARTprintf("!!! MOTOR FAULT !!!\r\n");
-                // g_ui32ActiveFaults |= FAULT_EBRAKE | FAULT_OVERCURRENT;
-                // vTaskDelay(pdMS_TO_TICKS(5000));        // Stay in fault for 5s
-                
-                // // Auto recover for demo
-                // g_ui32ActiveFaults = 0;
-                // SetMotorState(MOTOR_IDLE);
-
-
-                SafeUARTprintf("!!! MOTOR FAULT !!!\r\n");
-                g_ui32ActiveFaults |= FAULT_EBRAKE | FAULT_OVERCURRENT;
-                g_bFaultAcknowledged = false;
-
-                // PAUSE motor task until user presses ACK FAULT button
-                while (g_eMotorState == MOTOR_FAULT && !g_bFaultAcknowledged)
+        switch (xMotorStatus.state)
+        {
+            case MOTOR_CONTROL_STATE_STARTING:
+                if (g_eMotorState != MOTOR_STARTING)
                 {
-                    vTaskDelay(pdMS_TO_TICKS(250));
+                    SetMotorState(MOTOR_STARTING);
                 }
-
-                g_ui32ActiveFaults = 0;
-                SetMotorState(MOTOR_IDLE);                
-
                 break;
 
+            case MOTOR_CONTROL_STATE_RUNNING:
+                if (g_eMotorState != MOTOR_RUNNING)
+                {
+                    SetMotorState(MOTOR_RUNNING);
+                }
+                break;
+
+            case MOTOR_CONTROL_STATE_ESTOP_BRAKING:
+            case MOTOR_CONTROL_STATE_FAULT_LATCHED:
+                g_ui32ActiveFaults |= FAULT_EBRAKE;
+                g_bFaultAcknowledged = false;
+                if (g_eMotorState != MOTOR_FAULT)
+                {
+                    SetMotorState(MOTOR_FAULT);
+                }
+                break;
+
+            case MOTOR_CONTROL_STATE_IDLE:
             default:
-                SetMotorState(MOTOR_IDLE);
+                g_startDisplay = true;
+                if (g_eMotorState != MOTOR_IDLE)
+                {
+                    SetMotorState(MOTOR_IDLE);
+                }
                 break;
         }
 
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100)); // Small tick
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(MOTOR_CONTROL_PERIOD_MS));
     }
 }
 

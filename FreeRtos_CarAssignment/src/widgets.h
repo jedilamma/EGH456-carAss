@@ -79,13 +79,13 @@ extern volatile uint8_t  g_ui8Hours, g_ui8Minutes, g_ui8Seconds;
 extern volatile uint8_t  g_ui8Day, g_ui8Month;
 extern volatile uint16_t g_ui16Year;
 extern volatile int16_t  g_i16MotorValue;
-extern uint16_t g_ui32Speed;
+extern uint32_t g_ui32Speed;
 // Bottom Navigation
 extern char *g_pcPanei32Names[];
 
 // ====================== Globals (EXTERN only) ======================
 extern uint32_t g_ui32Panel;
-uint32_t g_ui32ButtonState;
+extern uint32_t g_ui32ButtonState;
 extern tContext sContext;
 
 extern bool g_bOPTDisplayHold;
@@ -96,9 +96,9 @@ extern bool g_startDisplay;
 extern bool g_bFaultAcknowledged;
 extern bool g_bFaultButtonVisible;
 
-tCanvasWidget g_sDashboard;
-tPushButtonWidget g_sStartButton;
-tPushButtonWidget g_psSideButtons[6];
+extern tCanvasWidget g_sDashboard;
+extern tPushButtonWidget g_sStartButton;
+extern tPushButtonWidget g_psSideButtons[6];
 
 // Widget callbacks
 void OnIntroPaint(tWidget *psWidget, tContext *psContext);
@@ -147,8 +147,8 @@ extern uint32_t g_ui32ActiveSafety;
 extern uint32_t g_ui32FilteredBodyAccel;
 extern uint32_t g_ui32CurrentDistance;
 // ====================== New Widgets (Dashboard) ======================
-tCanvasWidget g_sMotorStateCanvas;
-tCanvasWidget g_sFaultButtonCanvas;
+extern tCanvasWidget g_sMotorStateCanvas;
+extern tCanvasWidget g_sFaultButtonCanvas;
 
 extern tCanvasWidget g_sFaultPanel;
 extern tSliderWidget g_sDashboardSlider;

@@ -28,6 +28,8 @@
 #include "pushbutton.h"
 #include "radiobutton.h"
 #include "slider.h"
+#include "motor_control.h"
+
 #include "utils/ustdlib.h"
 #include "drivers/Kentec320x240x16_ssd2119_spi.h"
 #include "drivers/touch.h"
@@ -83,7 +85,7 @@ extern volatile uint8_t  uiIndex_2;
 extern volatile uint32_t g_pui32ButtonPressed;
 // ====================== Motor Task ======================
 
-extern uint16_t g_ui32Speed;
+extern uint32_t g_ui32Speed;
 extern uint32_t g_ui32Panel;
 extern tContext sContext;
 

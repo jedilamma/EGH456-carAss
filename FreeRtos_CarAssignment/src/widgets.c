@@ -277,7 +277,7 @@ tSliderWidget g_sDashboardSlider = SliderStruct(&g_sDashboard,
                                                 0,                              // No children
                                                 &g_sKentec320x240x16_SSD2119,
                                                 10, 50, 25, 140,               // x, y, width, height  ← adjust as needed
-                                                0, 100, 0,                     // min, max, initial value
+                                                0, 3000, 0,                     // min, max, initial value
                                                 (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
                                                 SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT | SL_STYLE_VERTICAL),
                                                 ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
@@ -620,7 +620,7 @@ void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
     // Big Speed Number
     GrContextFontSet(psContext, &g_sFontCm34);
     GrContextForegroundSet(psContext, ClrCyan);
-    usprintf(speedtext, "%d", g_ui32Speed);
+    usprintf(speedtext, "%u", (unsigned int)g_ui32Speed);
     GrStringDrawCentered(psContext, speedtext, -1, 60, 75, 1);
 
     GrContextFontSet(psContext, &g_sFontCm16);
