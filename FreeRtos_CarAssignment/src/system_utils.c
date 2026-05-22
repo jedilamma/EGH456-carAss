@@ -6,11 +6,11 @@
 
 // Moving average state for OPT3001 - Originally average divided by 10 even before 10 samples existed, 
 // leading to inaccurate initial readings
-#define OPT_AVG_WINDOW 10
-static uint32_t luxBuffer[OPT_AVG_WINDOW] = {0};
-static uint32_t luxSum = 0;
-static uint8_t luxIndex = 0;
-static uint8_t luxCount = 0;
+#define AVG_WINDOW 10
+static uint32_t Buffer[AVG_WINDOW] = {0};
+static uint32_t Sum = 0;
+static uint8_t Index = 0;
+static uint8_t Count = 0;
 
 
 void EnableHighResTimer(void)
@@ -179,28 +179,28 @@ uint32_t FloatToUX100(float value)
 }
 
 // ====================== OPT3001 Task ======================
-uint32_t UpdateLuxAverage(uint32_t newLux)
+uint32_t UpdateAverage(uint32_t Value)
 {
     // Only divide by the number of valid samples during startup
-    if (luxCount < OPT_AVG_WINDOW)
+    if (Count < AVG_WINDOW)
     {
-        luxBuffer[luxIndex] = newLux;
-        luxSum += newLux;
-        luxCount++;
+        Buffer[Index] = Value;
+        Sum += Value;
+        Count++;
     }
     else
     {
-        luxSum -= luxBuffer[luxIndex];
-        luxBuffer[luxIndex] = newLux;
-        luxSum += newLux;
+        Sum -= Buffer[Index];
+        Buffer[Index] = Value;
+        Sum += Value;
     }
 
-    luxIndex++;
-    if (luxIndex >= OPT_AVG_WINDOW)
+    Index++;
+    if (Index >= AVG_WINDOW)
     {
-        luxIndex = 0;
+        Index = 0;
     }
 
-    return luxSum / luxCount;
+    return Sum / Count;
 }
 

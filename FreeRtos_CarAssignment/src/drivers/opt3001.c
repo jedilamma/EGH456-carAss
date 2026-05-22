@@ -77,7 +77,7 @@ bool sensorOpt3001Init(void)
     uint8_t data[2];
 
     SafeUARTprintf("[OPT] Soft Reset...\r\n");
-    data[0] = 0xC8;  // MSB
+    data[0] = 0xC4;  // MSB
     data[1] = 0x10;  // LSB
     if (!writeI2C_Polling(OPT3001_I2C_ADDRESS, REG_CONFIGURATION, data))
     {
@@ -192,42 +192,20 @@ bool sensorOpt3001Enable(bool enable)
 bool sensorOpt3001Read(uint16_t *rawData)
 {
     uint16_t val = 0;
-    bool data_ready = false;
 
     if (rawData == NULL)
         return false;
 
-    SafeUARTprintf("[OPT] Reading Config Register...\r\n");
-
-    // 1. Read Configuration Register
-    if (!readI2C_Polling(OPT3001_I2C_ADDRESS, REG_CONFIGURATION, (uint8_t*)&val))
-    {
-        SafeUARTprintf("[OPT] FAILED: Config register read (I2C error)\r\n");
-        return false;
-    }
-
-    val = (val >> 8) | (val << 8);        // byte swap
-    data_ready = (val & DATA_RDY_BIT) != 0;
-
-    SafeUARTprintf("[OPT] Config read OK. Data Ready = %s\r\n", data_ready ? "YES" : "NO");
-
-    if (!data_ready)
-    {
-        return false;   // Normal — sensor just hasn't finished conversion yet
-    }
-
-    SafeUARTprintf("[OPT] Reading Result Register...\r\n");
-
-    // 2. Read Result Register
+    // In Continuous mode, just read the Result register directly.
+    // No need to check the Config register every time.
     if (!readI2C_Polling(OPT3001_I2C_ADDRESS, REG_RESULT, (uint8_t*)&val))
     {
-        SafeUARTprintf("[OPT] FAILED: Result register read (I2C error)\r\n");
         return false;
     }
 
+    // Byte swap (sensor sends MSB first)
     *rawData = (val >> 8) | (val << 8);
 
-    SafeUARTprintf("[OPT] *** RESULT READ SUCCESS *** Raw = 0x%04X\r\n", *rawData);
     return true;
 }
 

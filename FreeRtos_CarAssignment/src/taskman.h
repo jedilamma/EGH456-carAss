@@ -64,14 +64,17 @@
 // ====================== Message Object ======================
 typedef struct __attribute__((aligned(4))) MsgObj
 {
-    uint8_t  id;
-    int32_t  val;
-    uint32_t avg;
-    uint32_t tick;
-    uint8_t  flag;
-    uint32_t seq;
-    int32_t  val2;
-    int32_t  avg2;
+    uint8_t  id;        // Sensor ID (OPT3001, IMU, SHT31, etc.)
+    uint8_t  flag;      // 0 = OK, 1 = Error
+
+    int32_t val;       // Main value (e.g. raw lux, X accel, raw temp)
+    int32_t avg;       // Filtered / Average value
+
+    int32_t val2;      // Secondary value (e.g. Z accel, raw humidity)
+    int32_t avg2;      // Secondary filtered value
+
+    uint32_t tick;      // Optional: timestamp or sample counter
+    uint32_t seq;       // Optional: sequence number
     
 } MsgObj;
 
@@ -112,8 +115,9 @@ extern EventGroupHandle_t xEventGroup;
 
 // Plotting
 #define PLOT_HISTORY_SIZE 30
-extern uint32_t g_plotIMURawHistory[PLOT_HISTORY_SIZE];
-extern uint32_t g_plotIMUFiltHistory[PLOT_HISTORY_SIZE];
+extern uint32_t g_plotIMUxHistory[PLOT_HISTORY_SIZE];
+extern uint32_t g_plotIMUyHistory[PLOT_HISTORY_SIZE];
+extern uint32_t g_plotIMUmagHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotIMUIndex;
 
 extern uint32_t g_plotOPTRawHistory[PLOT_HISTORY_SIZE];
