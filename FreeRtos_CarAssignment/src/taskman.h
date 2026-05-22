@@ -70,9 +70,9 @@ typedef struct __attribute__((aligned(4))) MsgObj
     uint32_t tick;
     uint8_t  flag;
     uint32_t seq;
-
     int32_t  val2;
     int32_t  avg2;
+    
 } MsgObj;
 
 // ====================== Globals - EXTERN ONLY ======================

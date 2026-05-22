@@ -45,7 +45,7 @@
 #include "i2cOptDriver.h"
 #include "opt3001.h"
 #include "utils/uartstdio.h"
-
+#include "system_utils.h"
 
 
 /* ------------------------------------------------------------------------------------------------
@@ -74,14 +74,26 @@
  **************************************************************************************************/
 bool sensorOpt3001Init(void)
 {
-	//Disable the sensor
-	if (!sensorOpt3001Enable(false))
-	{
-		return false;
-	}
+    uint8_t data[2];
 
-	//Enable the sensor
-	return sensorOpt3001Enable(true);
+    SafeUARTprintf("[OPT] Soft Reset...\r\n");
+    data[0] = 0xC8;  // MSB
+    data[1] = 0x10;  // LSB
+    if (!writeI2C_Polling(OPT3001_I2C_ADDRESS, REG_CONFIGURATION, data))
+    {
+        SafeUARTprintf("[OPT] Reset FAILED\r\n");
+        return false;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(150));
+
+    if (!sensorOpt3001Enable(true))
+        return false;
+
+    SafeUARTprintf("[OPT] Waiting for first conversion (800ms mode)...\r\n");
+    vTaskDelay(pdMS_TO_TICKS(1000));     // ← Add this (1 second)
+
+    return true;
 }
 
 
@@ -92,20 +104,46 @@ bool sensorOpt3001Init(void)
  *
  * @return      none
  **************************************************************************************************/
+
 bool sensorOpt3001Enable(bool enable)
 {
-	uint16_t val;
+    uint16_t cfg = enable ? CONFIG_ENABLE : CONFIG_DISABLE;
+    uint8_t data[2];
+    uint8_t rx[2] = {0};
 
-	if (enable)
-	{
-		val = CONFIG_ENABLE;
-	}
-	else
-	{
-		val = CONFIG_DISABLE;
-	}
+    data[0] = (uint8_t)(cfg >> 8);
+    data[1] = (uint8_t)(cfg & 0xFF);
 
-	return writeI2C(OPT3001_I2C_ADDRESS, REG_CONFIGURATION, (uint8_t*)&val);
+    SafeUARTprintf("[OPT] Writing config 0x%04X using interrupt path...\r\n", cfg);
+
+    if (!writeI2C(OPT3001_I2C_ADDRESS, REG_CONFIGURATION, data))
+    {
+        SafeUARTprintf("[OPT] Config write FAILED\r\n");
+        return false;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(80));
+
+    // === Proper 2-byte read ===
+    if (!readBurstI2C_Polling(OPT3001_I2C_ADDRESS, REG_CONFIGURATION, rx, 2))
+    {
+        SafeUARTprintf("[OPT] 2-byte config read FAILED\r\n");
+        return false;
+    }
+
+    uint16_t readback = ((uint16_t)rx[0] << 8) | rx[1];   // Big-endian from sensor
+
+    SafeUARTprintf("[OPT] Readback = 0x%04X (expected 0x%04X)\r\n", readback, cfg);
+
+    if (readback != cfg)
+    {
+        SafeUARTprintf("[OPT] Still mismatch!\r\n");
+        return false;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(400));
+    SafeUARTprintf("[OPT] Continuous mode successfully enabled!\r\n");
+    return true;
 }
 
 
@@ -118,40 +156,80 @@ bool sensorOpt3001Enable(bool enable)
  *
  * @return      TRUE if valid data
  **************************************************************************************************/
+// bool sensorOpt3001Read(uint16_t *rawData)
+// {
+// 	bool data_ready;
+// 	uint16_t val;
+
+// 	// Read configuration register to check if a conversion result is ready
+// 	if (!readI2C(OPT3001_I2C_ADDRESS, REG_CONFIGURATION, (uint8_t *)&val))
+// 	{
+// 		return false;
+// 	}
+
+// 	// Sensor sends MSByte first; swap bytes after storing into little-endian val
+// 	val = (val >> 8) | (val << 8);
+
+// 	// DATA_RDY is bit 7 of the LSB of the OPT3001 configuration register
+// 	data_ready = (val & DATA_RDY_BIT) != 0;
+
+// 	if (!data_ready)
+// 	{
+// 		return false;
+// 	}
+
+// 	// Conversion complete — read the result register
+// 	if (!readI2C(OPT3001_I2C_ADDRESS, REG_RESULT, (uint8_t *)&val))
+// 	{
+// 		return false;
+// 	}
+
+// 	// Swap bytes (sensor sends MSByte first, MCU stores little-endian)
+// 	*rawData = (val >> 8) | (val << 8);
+
+// 	return true;
+// }
 bool sensorOpt3001Read(uint16_t *rawData)
 {
-	bool data_ready;
-	uint16_t val;
+    uint16_t val = 0;
+    bool data_ready = false;
 
-	// Read configuration register to check if a conversion result is ready
-	if (!readI2C(OPT3001_I2C_ADDRESS, REG_CONFIGURATION, (uint8_t *)&val))
-	{
-		return false;
-	}
+    if (rawData == NULL)
+        return false;
 
-	// Sensor sends MSByte first; swap bytes after storing into little-endian val
-	val = (val >> 8) | (val << 8);
+    SafeUARTprintf("[OPT] Reading Config Register...\r\n");
 
-	// DATA_RDY is bit 7 of the LSB of the OPT3001 configuration register
-	data_ready = (val & DATA_RDY_BIT) != 0;
+    // 1. Read Configuration Register
+    if (!readI2C_Polling(OPT3001_I2C_ADDRESS, REG_CONFIGURATION, (uint8_t*)&val))
+    {
+        SafeUARTprintf("[OPT] FAILED: Config register read (I2C error)\r\n");
+        return false;
+    }
 
-	if (!data_ready)
-	{
-		return false;
-	}
+    val = (val >> 8) | (val << 8);        // byte swap
+    data_ready = (val & DATA_RDY_BIT) != 0;
 
-	// Conversion complete — read the result register
-	if (!readI2C(OPT3001_I2C_ADDRESS, REG_RESULT, (uint8_t *)&val))
-	{
-		return false;
-	}
+    SafeUARTprintf("[OPT] Config read OK. Data Ready = %s\r\n", data_ready ? "YES" : "NO");
 
-	// Swap bytes (sensor sends MSByte first, MCU stores little-endian)
-	*rawData = (val >> 8) | (val << 8);
+    if (!data_ready)
+    {
+        return false;   // Normal — sensor just hasn't finished conversion yet
+    }
 
-	return true;
+    SafeUARTprintf("[OPT] Reading Result Register...\r\n");
+
+    // 2. Read Result Register
+    if (!readI2C_Polling(OPT3001_I2C_ADDRESS, REG_RESULT, (uint8_t*)&val))
+    {
+        SafeUARTprintf("[OPT] FAILED: Result register read (I2C error)\r\n");
+        return false;
+    }
+
+    *rawData = (val >> 8) | (val << 8);
+
+    SafeUARTprintf("[OPT] *** RESULT READ SUCCESS *** Raw = 0x%04X\r\n", *rawData);
+    return true;
 }
-
 
 /**************************************************************************************************
  * @fn          sensorOpt3001Test

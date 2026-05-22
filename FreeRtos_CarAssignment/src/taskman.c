@@ -9,7 +9,7 @@ static void prvMotorTask(void *pvParameters);
 static void prvFaultSimulatorTask(void *pvParameters);
 static void prvIMUTask(void *pvParameters);
 static void prvSHT31Task(void *pvParameters); // SHT31 task prototype
-//static void prvSensorTask(void *pvParameters);
+static void prvSensorTask(void *pvParameters);
 
 static void prvConfigureLED(void);
 static void prvConfigureButton(void);
@@ -96,8 +96,9 @@ void vCreateTask(void)
     xTaskCreate(readerTask, "Reader", configMINIMAL_STACK_SIZE * 10, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY , NULL);   // highest priority
 
     xTaskCreate(prvLEDTasksw1,      "LED",     configMINIMAL_STACK_SIZE * 2, NULL, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(prvOptTask,         "OPT",     configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 2, NULL);   
-    //xTaskCreate(prvIMUTask,         "IMU",     configMINIMAL_STACK_SIZE * 12, NULL, tskIDLE_PRIORITY + 2, NULL);  
+    //xTaskCreate(prvOptTask,         "OPT",     configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 2, NULL);   
+    //xTaskCreate(prvIMUTask,         "IMU",     configMINIMAL_STACK_SIZE * 12, NULL, tskIDLE_PRIORITY + 2, NULL); 
+    xTaskCreate(prvSensorTask,         "OPT+IMU",     configMINIMAL_STACK_SIZE * 20, NULL, tskIDLE_PRIORITY + 2, NULL); 
 
     xTaskCreate(prvDisplayTask,     "DISPLAY", configMINIMAL_STACK_SIZE * 20, NULL, tskIDLE_PRIORITY + 3, NULL);  // biggest
     xTaskCreate(prvFaultSimulatorTask, "FAULTSIM", configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
@@ -124,14 +125,119 @@ void prvLEDTasksw1(void *pvParameters)
                 uiIndex_2 = !uiIndex_2;
                 SafeUARTprintf(uiIndex_2 ? "Sensor output 2 - Reading Thresholds\r\n" : "Sensor output 1 - Serial plot\r\n");
             }
-
-
-
         }
     }
 }
 
-    
+// ====================== COMBINED POLLING-ONLY TASK (FINAL SAFE) ======================
+static void prvSensorTask(void *pvParameters)
+{
+    bmi160_accel_raw_t raw = {0};
+    struct MsgObj imuMsg = {0};
+    struct MsgObj optMsg = {0};
+    uint16_t rawData = 0;
+    float convertedLux = 0.0f;
+    uint32_t filt_avg10 = 0;
+    bool success = false;
+
+    SafeUARTprintf("=== Combined Polling-Only Sensor Task Started ===\r\n");
+
+    if (sensorBMI160Init())
+        SafeUARTprintf("BMI160 initialized OK\r\n");
+    else
+        SafeUARTprintf("!!! BMI160 INIT FAILED !!!\r\n");
+
+    if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(1500)) == pdPASS)
+    {
+        sensorOpt3001Init();
+        xSemaphoreGive(xI2CMutex);
+        SafeUARTprintf("OPT3001 initialized OK\r\n");
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    SafeUARTprintf("=== Entering main polling loop ===\r\n");
+
+    for (;;)
+    {
+        // Re-zero structs every loop
+        imuMsg = (struct MsgObj){0};
+        optMsg = (struct MsgObj){0};
+
+        // === BMI160 ===
+        if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(200)) == pdPASS)
+        {
+            if (sensorBMI160ReadAccel(&raw))
+            {
+                int32_t rawAvg = isqrt(raw.x*raw.x + raw.y*raw.y + raw.z*raw.z);
+
+                imuMsg.id   = SENSOR_ID_IMU;
+                imuMsg.val  = raw.x;
+                imuMsg.avg  = raw.y;
+                imuMsg.val2 = raw.z;
+                imuMsg.avg2 = rawAvg;
+                imuMsg.flag = 0;
+
+                SafeUARTprintf("[IMU] Polled: X=%6d Y=%6d Z=%6d\r\n", raw.x, raw.y, raw.z);
+            }
+            else
+            {
+                imuMsg.flag = 1;
+            }
+            xSemaphoreGive(xI2CMutex);
+        }
+        else
+        {
+            imuMsg.flag = 1;
+        }
+
+        xQueueSend(xQueue, &imuMsg, 0);
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        // === OPT3001 ===
+        if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(600)) == pdPASS)
+        {
+            success = false;
+
+            // Be very patient on the first few reads (up to ~1 second total)
+            for (int i = 0; i < 15; i++)          // max ~750 ms
+            {
+                success = sensorOpt3001Read(&rawData);
+                if (success)
+                    break;
+                vTaskDelay(pdMS_TO_TICKS(50));
+            }
+
+            if (success)
+            {
+                sensorOpt3001Convert(rawData, &convertedLux);
+                uint32_t rawLux = (uint32_t)convertedLux;
+                filt_avg10 = UpdateLuxAverage(rawLux);
+
+                optMsg.id   = SENSOR_ID_OPT3001;
+                optMsg.val  = rawLux;
+                optMsg.avg  = filt_avg10;
+                optMsg.flag = 0;
+
+                SafeUARTprintf("[OPT] *** SUCCESS *** Raw=0x%04X Lux=%.1f\r\n", rawData, convertedLux);
+            }
+            else
+            {
+                optMsg.flag = 1;
+                SafeUARTprintf("[OPT] Still not ready after retries (normal at startup)\r\n");
+            }
+            xSemaphoreGive(xI2CMutex);
+        }
+
+        xQueueSend(xQueue, &optMsg, 0);
+        //xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY);
+
+        vTaskDelay(pdMS_TO_TICKS(150));   // breathing room for weak I2C bus
+    }
+}
+
+
 // New FreeRTOS task for the SHT31 temperature/humidity sensor
 static void prvSHT31Task(void *pvParameters)
 {
@@ -349,7 +455,6 @@ static void readerTask(void *pvParameters)
             }
             
             struct MsgObj *pData = &latestSensorData[id];
-
                                     
             switch (id)
             {
@@ -660,7 +765,7 @@ void prvDisplayTask(void *pvParameters)
     for (;;)
     {
         WidgetMessageQueueProcess();
-        vTaskDelay(pdMS_TO_TICKS(20)); 
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 

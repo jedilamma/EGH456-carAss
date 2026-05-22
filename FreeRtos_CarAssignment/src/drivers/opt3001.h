@@ -66,8 +66,12 @@ extern "C"
 #define CONFIG_RESET                    0xC810                   
 #define CONFIG_TEST                     0xCC10
 
-#define CONFIG_ENABLE                   0x10C4 // stored little-endian: bytes sent on wire are [0xC4, 0x10], so sensor register receives 0xC410 (continuous conversion, 800ms)
-#define CONFIG_DISABLE                  0x10C0 // stored little-endian: bytes sent on wire are [0xC0, 0x10], so sensor register receives 0xC010 (shutdown)
+#define CONFIG_RESET                    0xC810
+#define CONFIG_ENABLE                   0xC410   // Continuous, 800ms, RN=1100 (auto range)
+#define CONFIG_DISABLE                  0xC010
+
+//#define CONFIG_ENABLE                   0x10C4 // stored little-endian: bytes sent on wire are [0xC4, 0x10], so sensor register receives 0xC410 (continuous conversion, 800ms)
+//#define CONFIG_DISABLE                  0x10C0 // stored little-endian: bytes sent on wire are [0xC0, 0x10], so sensor register receives 0xC010 (shutdown)
 
 /* Bit values */
 #define DATA_RDY_BIT                    0x0080  // Data ready
