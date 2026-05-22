@@ -131,7 +131,7 @@ tCanvasWidget g_sLightValCanvas2 = CanvasStruct( &g_sCanvas2, 0, 0,
                                             ClrBlack, 0, ClrWhite, &g_sFontCm12, "2000", 0, 0);
 
 // Panel 3 - Plotting
-Canvas(g_sCanvas3, g_psPanels + 3, &g_sPlotModeCheckBox3, 0,
+Canvas(g_sCanvas3, g_psPanels + 3, 0, 0,
        &g_sKentec320x240x16_SSD2119,
        30, 50, 200, 140,
        CANVAS_STYLE_OUTLINE | CANVAS_STYLE_APP_DRAWN,
@@ -152,7 +152,7 @@ tCheckBoxWidget g_sPlotModeCheckBox3 = CheckBoxStruct(g_psPanels + 3,
     0, OnIMUPlotModeChange);
 
 // Panel 4 - Plotting
-Canvas(g_sCanvas4, g_psPanels + 4, &g_sPlotModeCheckBox6, 0,
+Canvas(g_sCanvas4, g_psPanels + 4, 0, 0,
        &g_sKentec320x240x16_SSD2119,
        30, 50, 200, 140,
        CANVAS_STYLE_OUTLINE | CANVAS_STYLE_APP_DRAWN,
@@ -173,7 +173,7 @@ tCheckBoxWidget g_sPlotModeCheckBox6 = CheckBoxStruct(g_psPanels + 4,
     0, OnPlotModeChange4);
 
 // Panel 5 - Plotting
-Canvas(g_sCanvas5, g_psPanels + 5, &g_sPlotModeCheckBox7, 0,
+Canvas(g_sCanvas5, g_psPanels + 5, 0, 0,     // ← no static child
        &g_sKentec320x240x16_SSD2119,
        30, 50, 200, 140,
        CANVAS_STYLE_OUTLINE | CANVAS_STYLE_APP_DRAWN,
