@@ -107,7 +107,7 @@ tCheckBoxWidget g_sPlotModeCheckBox2 = CheckBoxStruct(g_psPanels + 2,
     NULL, 0, &g_sKentec320x240x16_SSD2119,
     30, 200, 65, 20,
     CB_STYLE_OUTLINE | CB_STYLE_TEXT | CB_STYLE_SELECTED,
-    16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Hold",
+    16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Display",
     0, OnOPTPlotModeChange2);
 
 tCheckBoxWidget g_sPlotModeCheckBox = CheckBoxStruct(g_psPanels + 2,
@@ -130,7 +130,7 @@ tCanvasWidget g_sLightValCanvas2 = CanvasStruct( &g_sCanvas2, 0, 0,
                                             CANVAS_STYLE_FILL | CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
                                             ClrBlack, 0, ClrWhite, &g_sFontCm12, "2000", 0, 0);
 
-// Panel 3 - Plotting
+// Panel 3 - Plotting accelerometer
 Canvas(g_sCanvas3, g_psPanels + 3, 0, 0,
        &g_sKentec320x240x16_SSD2119,
        30, 50, 200, 140,
@@ -141,7 +141,7 @@ tCheckBoxWidget g_sPlotModeCheckBox4 = CheckBoxStruct(g_psPanels + 3,
     NULL, 0, &g_sKentec320x240x16_SSD2119,
     30, 200, 65, 20,
     CB_STYLE_OUTLINE | CB_STYLE_TEXT | CB_STYLE_SELECTED,
-    16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Hold",
+    16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Display",
     0, OnIMUPlotModeChange2);
 
 tCheckBoxWidget g_sPlotModeCheckBox3 = CheckBoxStruct(g_psPanels + 3,
@@ -151,18 +151,18 @@ tCheckBoxWidget g_sPlotModeCheckBox3 = CheckBoxStruct(g_psPanels + 3,
     16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Show Raw",
     0, OnIMUPlotModeChange);
 
-// Panel 4 - Plotting
+// Panel 4 - Plotting - Range sensor
 Canvas(g_sCanvas4, g_psPanels + 4, 0, 0,
        &g_sKentec320x240x16_SSD2119,
        30, 50, 200, 140,
        CANVAS_STYLE_OUTLINE | CANVAS_STYLE_APP_DRAWN,
-       0, ClrGray, 0, 0, 0, 0, OnCanvasPaint);
+       0, ClrGray, 0, 0, 0, 0, OnRangeCanvasPaint);
 
 tCheckBoxWidget g_sPlotModeCheckBox5 = CheckBoxStruct(g_psPanels + 4,
     NULL, 0, &g_sKentec320x240x16_SSD2119,
     30, 200, 65, 20,
     CB_STYLE_OUTLINE | CB_STYLE_TEXT | CB_STYLE_SELECTED,
-    16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Hold",
+    16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Display",
     0, OnPlotModeChange3);
 
 tCheckBoxWidget g_sPlotModeCheckBox6 = CheckBoxStruct(g_psPanels + 4,
@@ -183,7 +183,7 @@ tCheckBoxWidget g_sPlotModeCheckBox7 = CheckBoxStruct(g_psPanels + 5,
     NULL, 0, &g_sKentec320x240x16_SSD2119,
     30, 200, 65, 20,
     CB_STYLE_OUTLINE | CB_STYLE_TEXT | CB_STYLE_SELECTED,
-    16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Hold",
+    16, 0, ClrGray, ClrGreen, &g_sFontCm16, "Display",
     0, OnPlotModeChange5);
 
 tCheckBoxWidget g_sPlotModeCheckBox8 = CheckBoxStruct(g_psPanels + 5,
@@ -376,10 +376,10 @@ void OnIMUPlotModeChange2(tWidget *psWidget, uint32_t bSelected)
         WidgetPaint((tWidget *)&g_sCanvas3);
 }
 
-// Plot callbacks
+// Plot callbacks // range sensor
 void OnPlotModeChange3(tWidget *psWidget, uint32_t bSelected)
 {
-    g_ePlotMode = bSelected ? IMU_PLOT_MODE_RAW_AND_FILTERED : IMU_PLOT_MODE_FILTERED_ONLY;
+    g_eRNGPlotMode = bSelected ? RNG_PLOT_MODE_RAW_AND_FILTERED : RNG_PLOT_MODE_FILTERED_ONLY;
     // if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_BTN_TOGGLE_PLOT);
     if (g_ui32Panel == 4) 
         WidgetPaint((tWidget *)&g_sCanvas4);
@@ -387,7 +387,7 @@ void OnPlotModeChange3(tWidget *psWidget, uint32_t bSelected)
 
 void OnPlotModeChange4(tWidget *psWidget, uint32_t bSelected)
 {
-    g_bDisplayHold = bSelected;
+    g_bRNGDisplayHold = bSelected;
     // if (xEventGroup) xEventGroupSetBits(xEventGroup, EVENT_DISPLAY_HOLD);
     if (g_ui32Panel == 4) 
         WidgetPaint((tWidget *)&g_sCanvas4);
@@ -414,7 +414,7 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
 {
     uint32_t ui32Idx;
     tRectangle sRect;
-    int32_t gx1, gy1, gx2, gy2, gy1f, gy2f,gmy1f, gmy2f;    
+    int32_t gx1, gy1, gx2, gy2, gy1f, gy2f, gy1ff, gy2ff, gmy1f, gmy2f;    
     const uint32_t yMax = 9000;
     const uint32_t canvas_xMin = 30, canvas_xRange = 210;
     const uint32_t canvas_yMin = 50, canvas_yRange = 140;
@@ -436,12 +436,15 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
     GrRectDraw(psContext, &sRect);
 
     // Labels
-    GrContextFontSet(psContext, &g_sFontCm16);
-    GrContextForegroundSet(psContext, ClrSilver);
-    GrStringDrawCentered(psContext, "2000", -1, 10, 33, 0);
-    GrStringDrawCentered(psContext, "10",   -1, 10, 160, 0);
-    GrStringDrawCentered(psContext, "Now",  -1, 30, 175, 0);
-    GrStringDrawCentered(psContext, "-10s", -1, 210, 175, 0);
+    GrContextFontSet(psContext, &g_sFontCm12);
+    GrContextForegroundSet(psContext, ClrCyan);
+    GrStringDraw(psContext, "X accel",  -1, 55, 55, 0);
+    GrContextForegroundSet(psContext, ClrYellow);
+    GrStringDraw(psContext, "Y accel", -1, 55, 75, 0);
+    GrContextForegroundSet(psContext, ClrOrange);
+    GrStringDraw(psContext, "Z  accel", -1, 55, 95, 0);
+    GrContextForegroundSet(psContext, ClrGreen);
+    GrStringDraw(psContext, "Magnitude", -1, 55, 115, 0);
 
     static char modeStr[15];
      
@@ -469,6 +472,9 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
         uint32_t y1 = g_plotIMUyHistory[dataIdx1];
         uint32_t y2 = g_plotIMUyHistory[dataIdx2];
 
+        uint32_t z1 = g_plotIMUzHistory[dataIdx1];
+        uint32_t z2 = g_plotIMUzHistory[dataIdx2];
+
         uint32_t mag1 = g_plotIMUmagHistory[dataIdx1];
         uint32_t mag2 = g_plotIMUmagHistory[dataIdx2];
 
@@ -478,6 +484,9 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
         float sY1 = (float)y1 / yMax; if (sY1 > 1.0f) sY1 = 1.0f;
         float sY2 = (float)y2 / yMax; if (sY2 > 1.0f) sY2 = 1.0f;
 
+        float sZ1 = (float)z1 / yMax; if (sZ1 > 1.0f) sZ1 = 1.0f;
+        float sZ2 = (float)z2 / yMax; if (sZ2 > 1.0f) sZ2 = 1.0f;
+
         float sMY1 = (float)mag1 / yMax; if (sMY1 > 1.0f) sMY1 = 1.0f;
         float sMY2 = (float)mag2 / yMax; if (sMY2 > 1.0f) sMY2 = 1.0f;
 
@@ -486,6 +495,9 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
 
         gy1f = canvas_yMin + canvas_yRange - (int32_t)(sY1 * canvas_yRange);
         gy2f = canvas_yMin + canvas_yRange - (int32_t)(sY2 * canvas_yRange);
+
+        gy1ff = canvas_yMin + canvas_yRange - (int32_t)(sZ1 * canvas_yRange);
+        gy2ff = canvas_yMin + canvas_yRange - (int32_t)(sZ2 * canvas_yRange);
 
         gx1 = canvas_xMin + (ui32Idx * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
         gx2 = canvas_xMin + ((ui32Idx + 1) * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
@@ -502,12 +514,102 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
             GrLineDraw(psContext, gx1, gy1-3, gx2, gy2-3);
             GrContextForegroundSet(psContext, ClrYellow);
             GrLineDraw(psContext, gx1, gy1f-3, gx2, gy2f-3);
+            GrContextForegroundSet(psContext, ClrOrange);
+            GrLineDraw(psContext, gx1, gy1ff-3, gx2, gy2ff-3);
         }
 
         GrContextForegroundSet(psContext, ClrLimeGreen);
         GrLineDraw(psContext, gx1, gmy1f-3, gx2, gmy2f-3);
     }
 
+}
+
+void OnRangeCanvasPaint(tWidget *psWidget, tContext *psContext)
+{
+     uint32_t ui32Idx;
+    tRectangle sRect;
+    int32_t x1, y1, x2, y2, y1f, y2f;    
+    const uint32_t yMax = 2000;
+    const uint32_t canvas_xMin = 30, canvas_xRange = 210;
+    const uint32_t canvas_yMin = 50, canvas_yRange = 140;
+    static char buff1[4];
+    static char buff2[4];
+    // Background
+    GrContextForegroundSet(psContext, ClrBlack);
+    sRect.i16XMin = canvas_xMin+2; 
+    sRect.i16YMin = canvas_yMin+2;
+    sRect.i16XMax = canvas_xMin-2 + canvas_xRange;
+    sRect.i16YMax = canvas_yMin-2 + canvas_yRange;
+    GrRectFill(psContext, &sRect);
+
+    // Grid
+    GrContextForegroundSet(psContext, ClrGray);
+    sRect.i16XMin = canvas_xMin; sRect.i16YMin = canvas_yMin;
+    sRect.i16XMax = canvas_xMin + canvas_xRange;
+    sRect.i16YMax = canvas_yMin + canvas_yRange;
+    GrRectDraw(psContext, &sRect);
+
+    // Labels
+    GrContextFontSet(psContext, &g_sFontCm12);
+    GrContextForegroundSet(psContext, ClrCyan);
+    GrStringDraw(psContext, "Filtered Range",  -1, 55, 55, 0);
+    GrContextForegroundSet(psContext, ClrYellow);
+    GrStringDraw(psContext, "Raw Range", -1, 55, 75, 0);
+
+    static char modeStr[15];
+     
+    if(g_eOPTPlotMode == RNG_PLOT_MODE_RAW_AND_FILTERED)
+    {
+        usprintf(modeStr, "Raw + Filtered"); 
+    }
+    else if(g_eOPTPlotMode == RNG_PLOT_MODE_FILTERED_ONLY) 
+    {
+        usprintf(modeStr, "Filtered Only");     
+    }
+           
+    GrContextForegroundSet(psContext, ClrWhite);
+    GrStringDrawCentered(psContext, modeStr, -1, canvas_xMin + canvas_xRange/2, 8, 0);
+
+    // Draw plot lines
+    for (ui32Idx = 0; ui32Idx < PLOT_HISTORY_SIZE - 1; ui32Idx++)
+    {
+        uint32_t dataIdx1 = (g_plotOPTIndex + ui32Idx) % PLOT_HISTORY_SIZE;
+        uint32_t dataIdx2 = (g_plotOPTIndex + ui32Idx + 1) % PLOT_HISTORY_SIZE;
+
+        uint32_t raw1  = g_plotRNGRawHistory[dataIdx1];
+        uint32_t raw2  = g_plotRNGRawHistory[dataIdx2];
+        uint32_t filt1 = g_plotRNGFiltHistory[dataIdx1];
+        uint32_t filt2 = g_plotRNGFiltHistory[dataIdx2];
+
+        float sRaw1  = (float)raw1  / yMax; if (sRaw1  > 1.0f) sRaw1  = 1.0f;
+        float sRaw2  = (float)raw2  / yMax; if (sRaw2  > 1.0f) sRaw2  = 1.0f;
+        float sFilt1 = (float)filt1 / yMax; if (sFilt1 > 1.0f) sFilt1 = 1.0f;
+        float sFilt2 = (float)filt2 / yMax; if (sFilt2 > 1.0f) sFilt2 = 1.0f;
+
+        y1  = canvas_yMin + canvas_yRange - (int32_t)(sRaw1  * canvas_yRange);
+        y2  = canvas_yMin + canvas_yRange - (int32_t)(sRaw2  * canvas_yRange);
+        y1f = canvas_yMin + canvas_yRange - (int32_t)(sFilt1 * canvas_yRange);
+        y2f = canvas_yMin + canvas_yRange - (int32_t)(sFilt2 * canvas_yRange);
+
+        x1 = canvas_xMin + (ui32Idx * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
+        x2 = canvas_xMin + ((ui32Idx + 1) * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
+        
+        if (g_eOPTPlotMode == OPT_PLOT_MODE_RAW_AND_FILTERED)
+        {   
+            usprintf(buff2, "%4d",filt1); 
+            CanvasTextSet(&g_sLightValCanvas2, buff2);
+            //WidgetPaint((tWidget *)&g_sLightValCanvas2);
+
+            GrContextForegroundSet(psContext, ClrCyan);            
+            GrLineDraw(psContext, x1, y1-3, x2, y2-3);
+        }
+        usprintf(buff1, "%4d",raw1); 
+        CanvasTextSet(&g_sLightValCanvas, buff1);
+        //WidgetPaint((tWidget *)&g_sLightValCanvas);
+
+        GrContextForegroundSet(psContext, ClrYellow);
+        GrLineDraw(psContext, x1, y1f-3, x2, y2f-3);
+    }    
 }
 
 void OnCanvasPaint(tWidget *psWidget, tContext *psContext)
@@ -688,12 +790,11 @@ void OnOPTCanvasPaint(tWidget *psWidget, tContext *psContext)
     GrRectDraw(psContext, &sRect);
 
     // Labels
-    GrContextFontSet(psContext, &g_sFontCm16);
-    GrContextForegroundSet(psContext, ClrSilver);
-    // GrStringDrawCentered(psContext, "2000", -1, 10, 33, 0);
-    // GrStringDrawCentered(psContext, "10",   -1, 10, 160, 0);
-    // GrStringDrawCentered(psContext, "Now",  -1, 30, 175, 0);
-    // GrStringDrawCentered(psContext, "-10s", -1, 210, 175, 0);
+    GrContextFontSet(psContext, &g_sFontCm12);
+    GrContextForegroundSet(psContext, ClrCyan);
+    GrStringDraw(psContext, "Filtered Lux",  -1, 55, 55, 0);
+    GrContextForegroundSet(psContext, ClrYellow);
+    GrStringDraw(psContext, "Raw Lux", -1, 55, 75, 0);
 
     static char modeStr[15];
      
@@ -737,13 +838,15 @@ void OnOPTCanvasPaint(tWidget *psWidget, tContext *psContext)
         {   
             usprintf(buff2, "%4d",filt1); 
             CanvasTextSet(&g_sLightValCanvas2, buff2);
-            WidgetPaint((tWidget *)&g_sLightValCanvas2);
+            //WidgetPaint((tWidget *)&g_sLightValCanvas2);
+
             GrContextForegroundSet(psContext, ClrCyan);            
             GrLineDraw(psContext, x1, y1-3, x2, y2-3);
         }
         usprintf(buff1, "%4d",raw1); 
         CanvasTextSet(&g_sLightValCanvas, buff1);
-        WidgetPaint((tWidget *)&g_sLightValCanvas);
+        //WidgetPaint((tWidget *)&g_sLightValCanvas);
+
         GrContextForegroundSet(psContext, ClrYellow);
         GrLineDraw(psContext, x1, y1f-3, x2, y2f-3);
     }
@@ -983,7 +1086,7 @@ void UpdateMotorStateCanvas(void)
     if (g_eMotorState == MOTOR_FAULT)
         CanvasTextColorSet(&g_sMotorStateCanvas, ClrWhite);
     else
-        CanvasTextColorSet(&g_sMotorStateCanvas, ClrBlack);
+        CanvasTextColorSet(&g_sMotorStateCanvas, ClrLightSlateGray);
 
     WidgetPaint((tWidget *)&g_sMotorStateCanvas);
 }
@@ -1028,6 +1131,11 @@ void ShowStartButton(void)
         WidgetPaint((tWidget *)&g_sDashboard);
         // Extra safety: repaint root in case dashboard isn't fully active
         WidgetPaint(WIDGET_ROOT);
+        // Repaint side buttons so they stay visible
+        for (int i = 0; i < 6; i++)
+        {
+            WidgetPaint((tWidget *)&g_psSideButtons[i]);
+        }
     }
 }
 
@@ -1040,6 +1148,11 @@ void HideStartButton(void)
     {
         WidgetPaint((tWidget *)&g_sDashboard);
         WidgetPaint(WIDGET_ROOT);
+        // Repaint side buttons so they stay visible
+        for (int i = 0; i < 6; i++)
+        {
+            WidgetPaint((tWidget *)&g_psSideButtons[i]);
+        }
     }
 }
 

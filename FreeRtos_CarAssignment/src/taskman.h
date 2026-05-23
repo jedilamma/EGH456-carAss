@@ -3,8 +3,10 @@
 
 // Define sensor IDs to reduce dependency on magic numbers
 #define SENSOR_ID_OPT3001 1U // Optical Sensor (OPT3001)
-#define SENSOR_ID_IMU 2U // Accelerometer/Magnetometer (BMI160)
-#define SENSOR_ID_SHT31 3U // Temperature/Humidity Sensor (SHT31)
+#define SENSOR_ID_BMI160 2U // Accelerometer/Magnetometer (BMI160)
+#define SENSOR_ID_RANGE 3U // Range Sensor
+#define SENSOR_ID_HALL 4U // MotorSensor
+#define SENSOR_ID_SHT31 5U // Temperature/Humidity Sensor (SHT31)
 
 // Standard includes
 #include <stdio.h>
@@ -97,6 +99,7 @@ extern bool g_bSHT31Valid;
 extern bool g_faultSwitch;
 extern bool g_startDisplay;
 extern bool g_bFaultAcknowledged;
+
 extern int32_t  g_i32CabinTempCx100;
 extern uint32_t g_ui32CabinHumidityRHx100;
 
@@ -117,6 +120,7 @@ extern EventGroupHandle_t xEventGroup;
 #define PLOT_HISTORY_SIZE 30
 extern uint32_t g_plotIMUxHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotIMUyHistory[PLOT_HISTORY_SIZE];
+extern uint32_t g_plotIMUzHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotIMUmagHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotIMUIndex;
 
@@ -124,10 +128,15 @@ extern uint32_t g_plotOPTRawHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotOPTFiltHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotOPTIndex;
 
+extern uint32_t g_plotRNGRawHistory[PLOT_HISTORY_SIZE];
+extern uint32_t g_plotRNGFiltHistory[PLOT_HISTORY_SIZE];
+extern uint32_t g_plotRNGIndex;
+
 // Motor & Plot Mode
 extern volatile MotorState_t g_eMotorState;
 extern PlotMode_t g_eOPTPlotMode;
 extern PlotMode_t g_eIMUPlotMode;
+extern PlotMode_t g_eRNGPlotMode;
 extern PlotMode_t g_ePlotMode;
 
 // ====================== FAULT / WARNING DEFINES (MOVED HERE) ======================
@@ -151,6 +160,7 @@ extern uint32_t g_ui32ActiveSafety;
 #define EVENT_BTN_TOGGLE_PLOT    (1U << 4)
 #define EVENT_DISPLAY_HOLD       (1U << 5)
 #define EVENT_MOTOR_STATE_CHANGE (1U << 6)
+#define EVENT_HIGH_ACCEL_LIMIT (1U << 7)
 #define EVENT_ALL_BITS           (0xFFU)
 
 // ====================== QUEUE + TASK PRIORITIES ======================

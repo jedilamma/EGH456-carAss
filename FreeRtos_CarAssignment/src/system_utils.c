@@ -7,10 +7,20 @@
 // Moving average state for OPT3001 - Originally average divided by 10 even before 10 samples existed, 
 // leading to inaccurate initial readings
 #define AVG_WINDOW 10
-static uint32_t Buffer[AVG_WINDOW] = {0};
-static uint32_t Sum = 0;
-static uint8_t Index = 0;
-static uint8_t Count = 0;
+static uint32_t LuxBuffer[AVG_WINDOW] = {0};
+static uint32_t RangeBuffer[AVG_WINDOW] = {0};
+static uint32_t IMUBuffer[AVG_WINDOW] = {0};
+
+static uint32_t RSum = 0;
+static uint8_t RIndex = 0;
+static uint8_t RCount = 0;
+static uint32_t LSum = 0;
+static uint8_t LIndex = 0;
+static uint8_t LCount = 0;
+static uint32_t BSum = 0;
+static uint8_t BIndex = 0;
+static uint8_t BCount = 0;
+
 
 
 void EnableHighResTimer(void)
@@ -179,28 +189,76 @@ uint32_t FloatToUX100(float value)
 }
 
 // ====================== OPT3001 Task ======================
-uint32_t UpdateAverage(uint32_t Value)
+uint32_t UpdateAverage(uint32_t Value,uint8_t SensorState)
 {
     // Only divide by the number of valid samples during startup
-    if (Count < AVG_WINDOW)
+    switch(SensorState)
     {
-        Buffer[Index] = Value;
-        Sum += Value;
-        Count++;
-    }
-    else
-    {
-        Sum -= Buffer[Index];
-        Buffer[Index] = Value;
-        Sum += Value;
-    }
+        case SENSOR_ID_OPT3001:
+            if (LCount < AVG_WINDOW)
+            {
+                LuxBuffer[LIndex] = Value;
+                LSum += Value;
+                LCount++;
+            }
+            else
+            {
+                LSum -= LuxBuffer[LIndex];
+                LuxBuffer[LIndex] = Value;
+                LSum += Value;
+            }
 
-    Index++;
-    if (Index >= AVG_WINDOW)
-    {
-        Index = 0;
-    }
+            LIndex++;
+            if (LIndex >= AVG_WINDOW)
+            {
+                LIndex = 0;
+            }
+            return LSum / LCount;
 
-    return Sum / Count;
+            break;
+        case SENSOR_ID_BMI160:
+            if (BCount < AVG_WINDOW)
+            {
+                IMUBuffer[BIndex] = Value;
+                BSum += Value;
+                BCount++;
+            }
+            else
+            {
+                BSum -= IMUBuffer[BIndex];
+                LuxBuffer[BIndex] = Value;
+                BSum += Value;
+            }
+
+            BIndex++;
+            if (BIndex >= AVG_WINDOW)
+            {
+                BIndex = 0;
+            }
+            return BSum / BCount;
+        break;
+        case SENSOR_ID_RANGE:
+            if (RCount < AVG_WINDOW)
+            {
+                RangeBuffer[RIndex] = Value;
+                RSum += Value;
+                RCount++;
+            }
+            else
+            {
+                RSum -= RangeBuffer[RIndex];
+                RangeBuffer[RIndex] = Value;
+                RSum += Value;
+            }
+
+            RIndex++;
+            if (RIndex >= AVG_WINDOW)
+            {
+                RIndex = 0;
+            }
+            return RSum / RCount;
+        break;
+    }
+    return 0;
 }
 

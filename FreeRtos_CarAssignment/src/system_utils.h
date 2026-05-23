@@ -15,7 +15,7 @@ volatile int16_t  g_i16MotorValue;
 
 // ====================== Function Prototypes ======================
 // Data format helpers for OPT3001 and SHT31
-uint32_t UpdateAverage(uint32_t Value);
+uint32_t UpdateAverage(uint32_t Value,uint8_t SensorState);
 int32_t FloatToX100(float value);
 uint32_t FloatToUX100(float value);
 

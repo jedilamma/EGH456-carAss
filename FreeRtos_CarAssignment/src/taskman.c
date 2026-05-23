@@ -25,6 +25,7 @@ uint32_t g_ui32Panel = 0;
 uint32_t g_ui32ActiveFaults = 0;
 uint32_t g_ui32ActiveWarnings = 0;
 uint32_t g_ui32ActiveSafety = 0;
+
 // ====================== NEW ENGINE / SAFETY / LUX GLOBALS ======================
 uint32_t g_ui32FilteredBodyAccel     = 420;   // live filtered acceleration
 uint32_t g_ui32CrashThreshold        = 2500;   // configurable crash limit
@@ -49,20 +50,26 @@ uint32_t g_plotOPTIndex = 0;
 
 uint32_t g_plotIMUxHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotIMUyHistory[PLOT_HISTORY_SIZE] = {0};
+uint32_t g_plotIMUzHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotIMUmagHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotIMUIndex = 0;
 
-
+uint32_t g_plotRNGRawHistory[PLOT_HISTORY_SIZE] = {0};
+uint32_t g_plotRNGFiltHistory[PLOT_HISTORY_SIZE] = {0};
+uint32_t g_plotRNGIndex;
 
 PlotMode_t g_eOPTPlotMode = OPT_PLOT_MODE_RAW_AND_FILTERED;
 PlotMode_t g_eIMUPlotMode = IMU_PLOT_MODE_RAW_AND_FILTERED; 
-PlotMode_t g_ePlotMode = IMU_PLOT_MODE_RAW_AND_FILTERED;
+PlotMode_t g_eRNGPlotMode = RNG_PLOT_MODE_RAW_AND_FILTERED;
+PlotMode_t g_ePlotMode = RNG_PLOT_MODE_RAW_AND_FILTERED;
 volatile MotorState_t g_eMotorState = MOTOR_IDLE;
 
 
 bool g_bOPTDisplayHold = false;
 bool g_bIMUDisplayHold = false;
+bool g_bRNGDisplayHold = false;
 bool g_bDisplayHold = false;
+
 bool g_faultSwitch = false;
 bool g_startDisplay = true;
 // GUI-facing SHT31 state variables
@@ -241,7 +248,8 @@ static void readerTask(void *pvParameters)
     EventBits_t uxBits;
     uint32_t messagesDiscarded = 0;
     uint16_t missingSampleCount = 0;
-
+    uint32_t filt_avg10 = 4000;
+    int32_t Lastmagnitude = 0;
     (void)pvParameters;
 
     SafeUARTprintf("Reader Task Started - Draining queue, keeping latest per sensor...\r\n");
@@ -256,7 +264,8 @@ static void readerTask(void *pvParameters)
                                       EVENT_LUXLOW_THRESHOLD |
                                       EVENT_SENSOR_DATA_READY |
                                       EVENT_DISPLAY_HOLD |
-                                      EVENT_MOTOR_STATE_CHANGE),
+                                      EVENT_MOTOR_STATE_CHANGE | 
+                                      EVENT_HIGH_ACCEL_LIMIT),
                                      pdTRUE,
                                      pdFALSE,
                                      pdMS_TO_TICKS(100));
@@ -356,31 +365,72 @@ static void readerTask(void *pvParameters)
                     {
                         missingSampleCount++;
                         break;
-                    }
+                    }              
+                    
+                    filt_avg10 = UpdateAverage(pData->val,SENSOR_ID_OPT3001);     // or UpdateLuxAverage()
+
                     SafeUARTprintf("RX xQueue id=0x%02x raw=%3d filtered=%3d flag=%u \r\n",
                                     pData->id,
-                                    pData->val,
-                                    pData->avg,                            
-                                    pData->flag);
+                                    pData->val, filt_avg10,                                                               
+                                    pData->flag);  
 
-                    if((unsigned int)pData->avg < g_ui32LuxMinThreshold)
+                    if(filt_avg10 < g_ui32LuxMinThreshold)
                     {
                         xEventGroupSetBits(xEventGroup, EVENT_LUXLOW_THRESHOLD);
                     }
-
-                    g_plotOPTRawHistory[g_plotOPTIndex] = (uint32_t)pData->val;
-                    g_plotOPTFiltHistory[g_plotOPTIndex] = pData->avg;
-                    g_plotOPTIndex = (g_plotOPTIndex + 1) % PLOT_HISTORY_SIZE;
-
-                    if (g_ui32Panel == 2)
+                    if(g_bOPTDisplayHold)
                     {
-                         WidgetPaint((tWidget *)&g_sCanvas2);
-                    }
+                        g_plotOPTRawHistory[g_plotOPTIndex] = (uint32_t)pData->val;
+                        g_plotOPTFiltHistory[g_plotOPTIndex] = filt_avg10;
+                        g_plotOPTIndex = (g_plotOPTIndex + 1) % PLOT_HISTORY_SIZE;
 
+                        if (g_ui32Panel == 2)
+                        {
+                            WidgetPaint((tWidget *)&g_sCanvas2);
+                        }
+                    }
                     break;
                 }
 
-                case SENSOR_ID_IMU:
+                case SENSOR_ID_BMI160:
+                {
+                    if (pData->flag == 1U)
+                    {
+                        break;
+                    }
+                    
+                    int32_t magnitude = isqrt(pData->val * pData->val + pData->val2 * pData->val2 + pData->avg2 * pData->avg2);
+
+                    SafeUARTprintf("RX xQueue id=0x%02x x=%3d y=%3d z=%3d Mag=%3d flag=%u \r\n",
+                                    pData->id,
+                                    pData->val,     //x
+                                    pData->val2,    //y
+                                    pData->avg2,    //z  
+                                    magnitude,                
+                                    pData->flag);
+
+                    if((Lastmagnitude - magnitude) > 3000)
+                    {
+                        xEventGroupSetBits(xEventGroup, EVENT_HIGH_ACCEL_LIMIT);
+                    }
+                    Lastmagnitude = magnitude;
+
+                    if(g_bIMUDisplayHold)
+                    {
+                        g_plotIMUxHistory[g_plotIMUIndex] = abs(pData->val);
+                        g_plotIMUyHistory[g_plotIMUIndex] = abs(pData->val2);
+                        g_plotIMUzHistory[g_plotIMUIndex] = abs(pData->avg2);
+                        g_plotIMUmagHistory[g_plotIMUIndex] = magnitude;
+                        g_plotIMUIndex = (g_plotIMUIndex + 1) % PLOT_HISTORY_SIZE;
+
+                        if (g_ui32Panel == 3)   // updates graph on panel 3
+                        {
+                            WidgetPaint((tWidget *)&g_sCanvas3);
+                        }
+                    }
+                    break;
+                }
+                case SENSOR_ID_RANGE:
                 {
                     if (pData->flag == 1U)
                     {
@@ -388,24 +438,56 @@ static void readerTask(void *pvParameters)
                     }
                     SafeUARTprintf("RX xQueue id=0x%02x x=%3d y=%3d Mag=%3d flag=%u \r\n",
                                     pData->id,
-                                    pData->val,
-                                    pData->val2,     
-                                    pData->avg2,                       
+                                    pData->val,     //Range       
                                     pData->flag);
-           
-                    g_plotIMUxHistory[g_plotIMUIndex] = abs(pData->val); 
+
+                    filt_avg10 = UpdateAverage(pData->val,SENSOR_ID_RANGE); 
+
+                    if(g_bRNGDisplayHold)
+                    {
+                        g_plotOPTRawHistory[g_plotOPTIndex] = (uint32_t)pData->val;
+                        g_plotOPTFiltHistory[g_plotOPTIndex] = filt_avg10;
+                        g_plotOPTIndex = (g_plotOPTIndex + 1) % PLOT_HISTORY_SIZE;
+
+                        if (g_ui32Panel == 4)   // updates graph on panel 4
+                        {
+                            WidgetPaint((tWidget *)&g_sCanvas4);
+                        }
+                    }
+                    break;
+                }
+                case SENSOR_ID_HALL:
+                {
+                    if (pData->flag == 1U)
+                    {
+                        break;
+                    }
+                    SafeUARTprintf("RX xQueue id=0x%02x x=%3d y=%3d Mag=%3d flag=%u \r\n",
+                                    pData->id,
+                                    pData->val,     //x
+                                    pData->val2,    //y
+                                    pData->avg2,    //z                  
+                                    pData->flag);
+
+                    int32_t magnitude = isqrt(pData->val * pData->val + pData->val2 * pData->val2 + pData->avg2 * pData->avg2);
+                    if((Lastmagnitude - magnitude) > 3000)
+                    {
+                        xEventGroupSetBits(xEventGroup, EVENT_HIGH_ACCEL_LIMIT);
+                    }
+                    Lastmagnitude = magnitude;
+
+                    g_plotIMUxHistory[g_plotIMUIndex] = abs(pData->val);
                     g_plotIMUyHistory[g_plotIMUIndex] = abs(pData->val2);
-                    g_plotIMUmagHistory[g_plotIMUIndex] = abs(pData->avg2);
+                    g_plotIMUmagHistory[g_plotIMUIndex] = magnitude;
                     g_plotIMUIndex = (g_plotIMUIndex + 1) % PLOT_HISTORY_SIZE;
 
-                    if (g_ui32Panel == 3)
+                    if (g_ui32Panel == 3)   // updates graph on panel 3
                     {
                         WidgetPaint((tWidget *)&g_sCanvas3);
                     }
 
                     break;
                 }
-
                 case SENSOR_ID_SHT31:
                 {
                     // Extract SHT31 filtered values from the message
@@ -448,6 +530,10 @@ static void readerTask(void *pvParameters)
                         g_bCoolingOn = false;
                         g_bHeatingOn = false;
                     }
+
+
+                    //instead of this draw when the value changes 
+                    //not on every update as it might not change
 
                     // // Repaint only the active panel
                     // if (g_ui32Panel == 0)
@@ -497,12 +583,11 @@ static void prvIMUTask(void *pvParameters)
         {
             if (sensorBMI160ReadAccel(&raw))
             {
-                int32_t magnitude = isqrt(raw.x * raw.x + raw.y * raw.y + raw.z * raw.z);
 
-                msg.id   = SENSOR_ID_IMU;
+                msg.id   = SENSOR_ID_BMI160;
                 msg.val  = raw.x;     
-                msg.val2  = raw.y;
-                msg.avg2 = magnitude;   // Using magnitude as main value
+                msg.val2 = raw.y;
+                msg.avg2 = raw.z;   // Using magnitude as main value
                 msg.flag = 0;
 
                 // Optional debug
@@ -529,7 +614,7 @@ static void prvOptTask(void *pvParameters)
 {
     uint16_t rawData = 0;
     float convertedLux = 0.0f;
-    uint32_t filt_avg10 = 0;
+    
     struct MsgObj msg = {0};
     TickType_t xLastWakeTime = xTaskGetTickCount();
 
@@ -558,11 +643,9 @@ static void prvOptTask(void *pvParameters)
             {
                 sensorOpt3001Convert(rawData, &convertedLux);
                 uint32_t rawLux = (uint32_t)convertedLux;
-                filt_avg10 = UpdateAverage(rawLux);     // or UpdateLuxAverage()
-
                 msg.id   = SENSOR_ID_OPT3001;
                 msg.val  = rawLux;
-                msg.avg  = filt_avg10;
+                //msg.avg  = filt_avg10;
                 msg.flag = 0;
 
                 // Optional debug
@@ -627,9 +710,9 @@ void prvDisplayTask(void *pvParameters)
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sMotorStateCanvas);
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultPanel);  
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sStartButton);
-    
-    
+    WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sCanvasDash);    
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultButtonCanvas);
+
     WidgetAdd((tWidget *)&g_sFaultButtonCanvas, (tWidget *)&g_sClearFaultButton);
     g_bFaultButtonVisible = true;   // initial state
 
@@ -637,13 +720,13 @@ void prvDisplayTask(void *pvParameters)
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sAccelMaxSlider);
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sDetRangeSlider);
     WidgetAdd((tWidget *)&g_sEngineCanvas, (tWidget *)&g_sLuxMinSlider);
+
+
     // Add permanent side buttons to root (do this only once)
     for (int i = 0; i < 6; i++)
     {
         WidgetAdd(WIDGET_ROOT, (tWidget *)&g_psSideButtons[i]);        
     }
-
-    WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sCanvasDash);
    
     WidgetPaint(WIDGET_ROOT);    
 
@@ -787,7 +870,7 @@ static void prvMotorTask(void *pvParameters)
                 vTaskDelay(pdMS_TO_TICKS(8000));        // Run for 8 seconds
                 
                 // Random chance to create a fault (for demo)
-                if ((rand() % 5) == 0)                  // ~20% chance
+                if ((rand() % 20) == 0)                  // ~5% chance
                     SetMotorState(MOTOR_FAULT);
                 else
                     SetMotorState(MOTOR_IDLE);          // Back to idle
@@ -864,7 +947,7 @@ static void prvFaultSimulatorTask(void *pvParameters)
         }
 
         // Full clear occasionally
-        if ((rand() % 60) == 0)
+        if ((rand() % 4) == 0)
         {
             g_ui32ActiveFaults = 0;
             SafeUARTprintf("--- ALL FAULTS CLEARED ---\r\n");

@@ -10,7 +10,9 @@ typedef enum
     OPT_PLOT_MODE_FILTERED_ONLY = 0,
     OPT_PLOT_MODE_RAW_AND_FILTERED,
     IMU_PLOT_MODE_FILTERED_ONLY,
-    IMU_PLOT_MODE_RAW_AND_FILTERED
+    IMU_PLOT_MODE_RAW_AND_FILTERED,
+    RNG_PLOT_MODE_FILTERED_ONLY,
+    RNG_PLOT_MODE_RAW_AND_FILTERED
 } PlotMode_t;
 
 // ====================== Motor State ======================
@@ -90,11 +92,14 @@ extern tContext sContext;
 
 extern bool g_bOPTDisplayHold;
 extern bool g_bIMUDisplayHold;
+extern bool g_bRNGDisplayHold;
 extern bool g_bDisplayHold;
+
 extern bool g_faultSwitch;
 extern bool g_startDisplay;
 extern bool g_bFaultAcknowledged;
 extern bool g_bFaultButtonVisible;
+
 bool g_bStartButtonVisible;
 tCanvasWidget g_sDashboard;
 tPushButtonWidget g_sStartButton;
@@ -109,6 +114,7 @@ void OnIntroPaint(tWidget *psWidget, tContext *psContext);
 void OnOPTCanvasPaint(tWidget *psWidget, tContext *psContext);
 void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext);
 void OnCanvasPaint(tWidget *psWidget, tContext *psContext);
+void OnRangeCanvasPaint(tWidget *psWidget, tContext *psContext);
 
 void OnCheckChange(tWidget *psWidget, uint32_t bSelected);
 void OnButtonPress(tWidget *psWidget);
