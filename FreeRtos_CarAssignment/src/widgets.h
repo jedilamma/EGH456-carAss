@@ -95,11 +95,14 @@ extern bool g_faultSwitch;
 extern bool g_startDisplay;
 extern bool g_bFaultAcknowledged;
 extern bool g_bFaultButtonVisible;
-
+bool g_bStartButtonVisible;
 tCanvasWidget g_sDashboard;
 tPushButtonWidget g_sStartButton;
 tPushButtonWidget g_psSideButtons[6];
 
+
+void ShowStartButton(void);
+void HideStartButton(void);
 // Widget callbacks
 void OnIntroPaint(tWidget *psWidget, tContext *psContext);
 
@@ -126,6 +129,8 @@ void UpdateFaultPanel(void);
 void OnClearFaultButtonPress(tWidget *psWidget);
 void ShowAckFaultButton(void);
 void HideAckFaultButton(void);
+
+void OnDashCanvasPaint(tWidget *psWidget, tContext *psContext);
 
 void OnNext(tWidget *psWidget);
 void OnPrevious(tWidget *psWidget);
@@ -161,6 +166,7 @@ extern tSliderWidget g_sCrashSlider;
 extern tCanvasWidget g_sDistanceCanvas;
 extern tSliderWidget g_sMinDistanceSlider;
 extern tCanvasWidget g_sCoolingStatusCanvas;
+extern tCanvasWidget g_sCanvasDash;
 
 extern uint32_t g_ui32LuxMinThreshold;
 extern uint32_t g_ui32CrashThreshold;

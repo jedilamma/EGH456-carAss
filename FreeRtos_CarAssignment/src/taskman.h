@@ -59,7 +59,7 @@
 #include "driverlib/timer.h" 
 #include "widgets.h"
 #include "system_utils.h"
-#include "temp_humidity.h" 
+#include "drivers/temp_humidity.h" 
 
 // ====================== Message Object ======================
 typedef struct __attribute__((aligned(4))) MsgObj
@@ -165,7 +165,7 @@ extern uint32_t g_ui32ActiveSafety;
 void SafeUARTprintf(const char *pcString, ...);
 void xButtonsHandler(void);
 void EnableHighResTimer(void);
-void prvSetMotorSpeed();
+//void prvSetMotorSpeed();
 void xBMI160DRDYHandler(void);
 
 extern bool sensorOpt3001Init(void);

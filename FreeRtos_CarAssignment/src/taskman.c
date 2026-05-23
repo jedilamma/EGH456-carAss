@@ -79,7 +79,7 @@ uint32_t g_ui32CabinHumidityRHx100 = 0;
 int32_t  g_i32HeatingThresholdCx100 = 1800;
 int32_t  g_i32CoolingThresholdCx100 = 2600;
 
-uint16_t g_ui32Speed = 0;
+uint16_t g_ui32Speed = 40;
 
 tContext sContext;
 
@@ -628,6 +628,7 @@ void prvDisplayTask(void *pvParameters)
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultPanel);  
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sStartButton);
     
+    
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultButtonCanvas);
     WidgetAdd((tWidget *)&g_sFaultButtonCanvas, (tWidget *)&g_sClearFaultButton);
     g_bFaultButtonVisible = true;   // initial state
@@ -639,10 +640,12 @@ void prvDisplayTask(void *pvParameters)
     // Add permanent side buttons to root (do this only once)
     for (int i = 0; i < 6; i++)
     {
-        WidgetAdd(WIDGET_ROOT, (tWidget *)&g_psSideButtons[i]);
+        WidgetAdd(WIDGET_ROOT, (tWidget *)&g_psSideButtons[i]);        
     }
 
-    WidgetPaint(WIDGET_ROOT);
+    WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sCanvasDash);
+   
+    WidgetPaint(WIDGET_ROOT);    
 
     for (;;)
     {

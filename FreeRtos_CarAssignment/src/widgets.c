@@ -282,12 +282,18 @@ tSliderWidget g_sDashboardSlider = SliderStruct(&g_sDashboard,
 
 // Square START button on Dashboard
 tPushButtonWidget g_sStartButton = RectangularButtonStruct(&g_sDashboard, 0, 0,
-                                    &g_sKentec320x240x16_SSD2119, 85, 100, 80, 45,     // square-ish 80x55
+                                    &g_sKentec320x240x16_SSD2119, 115, 100, 80, 45,     // square-ish 80x55
                                     PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_RELEASE_NOTIFY,
                                     ClrRed, ClrBlack, ClrWhite, ClrWhite,
                                     &g_sFontCm22, "START", 0, 0, 0, 0, OnStartButtonPress);
 
 
+// ====================== DASHBOARD BAR GRAPH CANVAS ======================
+Canvas(g_sCanvasDash, &g_sDashboard, 0, 0,
+       &g_sKentec320x240x16_SSD2119,
+       40, 55, 75, 130,           // ← now on the left, next to slider
+       CANVAS_STYLE_APP_DRAWN,
+       0, ClrWhite, 0, 0, 0, 0, OnDashCanvasPaint);
 
 // ====================== PERMANENT SIDE BUTTONS ======================
 // These are always on screen, on every panel
@@ -408,7 +414,7 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
 {
     uint32_t ui32Idx;
     tRectangle sRect;
-    int32_t gx1, gy1, gx2, gy2, gy1f, gy2f;    
+    int32_t gx1, gy1, gx2, gy2, gy1f, gy2f,gmy1f, gmy2f;    
     const uint32_t yMax = 9000;
     const uint32_t canvas_xMin = 30, canvas_xRange = 210;
     const uint32_t canvas_yMin = 50, canvas_yRange = 140;
@@ -472,13 +478,20 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
         float sY1 = (float)y1 / yMax; if (sY1 > 1.0f) sY1 = 1.0f;
         float sY2 = (float)y2 / yMax; if (sY2 > 1.0f) sY2 = 1.0f;
 
+        float sMY1 = (float)mag1 / yMax; if (sMY1 > 1.0f) sMY1 = 1.0f;
+        float sMY2 = (float)mag2 / yMax; if (sMY2 > 1.0f) sMY2 = 1.0f;
+
         gy1  = canvas_yMin + canvas_yRange - (int32_t)(sX1  * canvas_yRange);
         gy2  = canvas_yMin + canvas_yRange - (int32_t)(sX2  * canvas_yRange);
+
         gy1f = canvas_yMin + canvas_yRange - (int32_t)(sY1 * canvas_yRange);
         gy2f = canvas_yMin + canvas_yRange - (int32_t)(sY2 * canvas_yRange);
 
         gx1 = canvas_xMin + (ui32Idx * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
         gx2 = canvas_xMin + ((ui32Idx + 1) * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
+
+        gmy1f = canvas_yMin + canvas_yRange - (int32_t)(sMY1 * canvas_yRange);
+        gmy2f = canvas_yMin + canvas_yRange - (int32_t)(sMY2 * canvas_yRange);
         
         if (g_eIMUPlotMode == IMU_PLOT_MODE_RAW_AND_FILTERED)
         {   
@@ -487,18 +500,12 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
             // WidgetPaint((tWidget *)&g_sLightValCanvas3);
             GrContextForegroundSet(psContext, ClrCyan);            
             GrLineDraw(psContext, gx1, gy1-3, gx2, gy2-3);
+            GrContextForegroundSet(psContext, ClrYellow);
+            GrLineDraw(psContext, gx1, gy1f-3, gx2, gy2f-3);
         }
 
-        // GrContextFontSet(psContext, &g_sFontCm12);
-        // GrContextForegroundSet(psContext, ClrYellow);
-        // usprintf(buff,"%3d",(int32_t)filt1);
-        // GrStringDrawCentered(psContext, buff, -1, 200, 65, 1);
-
-        // usprintf(buff1, "%4d",raw1); 
-        // CanvasTextSet(&g_sLightValCanvas, buff1);
-        // WidgetPaint((tWidget *)&g_sLightValCanvas);
-        GrContextForegroundSet(psContext, ClrYellow);
-        GrLineDraw(psContext, gx1, gy1f-3, gx2, gy2f-3);
+        GrContextForegroundSet(psContext, ClrLimeGreen);
+        GrLineDraw(psContext, gx1, gmy1f-3, gx2, gmy2f-3);
     }
 
 }
@@ -595,6 +602,66 @@ void OnCanvasPaint(tWidget *psWidget, tContext *psContext)
     //     GrLineDraw(psContext, x1, y1f-3, x2, y2f-3);
     // }
 }
+
+
+void OnDashCanvasPaint(tWidget *psWidget, tContext *psContext)
+{
+    tRectangle r;
+
+    // Screen-absolute position of THIS canvas (must match the CanvasStruct above)
+    const int32_t canvasX = 40;
+    const int32_t canvasY = 55;
+
+    const int32_t barX = canvasX + 6;
+    const int32_t barY = canvasY + 20;
+    const int32_t barW = 28;
+    const int32_t barH = 88;
+    const uint32_t maxSpeed = 100;
+
+    // Title
+    GrContextFontSet(psContext, &g_sFontCm12);
+    GrContextForegroundSet(psContext, ClrWhite);
+    GrStringDrawCentered(psContext, "SPEED", -1, canvasX + 22, canvasY + 5, 0);
+
+    // Outer frame
+    GrContextForegroundSet(psContext, ClrWhite);
+    r.i16XMin = barX; r.i16YMin = barY;
+    r.i16XMax = barX + barW; r.i16YMax = barY + barH;
+    GrRectDraw(psContext, &r);
+
+    // Inner background
+    GrContextForegroundSet(psContext, ClrDarkGray);
+    r.i16XMin = barX + 2; r.i16YMin = barY + 2;
+    r.i16XMax = barX + barW - 2; r.i16YMax = barY + barH - 2;
+    GrRectFill(psContext, &r);
+
+    // Fill bar (grows from bottom)
+    uint32_t clamped = (g_ui32Speed > maxSpeed) ? maxSpeed : g_ui32Speed;
+    uint32_t fillH = (clamped * (barH - 4)) / maxSpeed;
+
+    if (fillH > 0)
+    {
+        if (clamped >= 90)
+            GrContextForegroundSet(psContext, ClrRed);
+        else if (clamped >= 70)
+            GrContextForegroundSet(psContext, ClrYellow);
+        else
+            GrContextForegroundSet(psContext, ClrGreen);
+
+        r.i16XMin = barX + 3;
+        r.i16YMin = barY + barH - 2 - fillH;
+        r.i16XMax = barX + barW - 3;
+        r.i16YMax = barY + barH - 2;
+        GrRectFill(psContext, &r);
+    }
+
+    // Scale labels
+    GrContextFontSet(psContext, &g_sFontCm12);
+    GrContextForegroundSet(psContext, ClrSilver);
+    GrStringDraw(psContext, "100", -1, barX + barW + 4, barY + 2, 0);
+    GrStringDraw(psContext, "0",   -1, barX + barW + 4, barY + barH - 8, 0);
+}
+
 void OnOPTCanvasPaint(tWidget *psWidget, tContext *psContext)
 {
     uint32_t ui32Idx;
@@ -623,10 +690,10 @@ void OnOPTCanvasPaint(tWidget *psWidget, tContext *psContext)
     // Labels
     GrContextFontSet(psContext, &g_sFontCm16);
     GrContextForegroundSet(psContext, ClrSilver);
-    GrStringDrawCentered(psContext, "2000", -1, 10, 33, 0);
-    GrStringDrawCentered(psContext, "10",   -1, 10, 160, 0);
-    GrStringDrawCentered(psContext, "Now",  -1, 30, 175, 0);
-    GrStringDrawCentered(psContext, "-10s", -1, 210, 175, 0);
+    // GrStringDrawCentered(psContext, "2000", -1, 10, 33, 0);
+    // GrStringDrawCentered(psContext, "10",   -1, 10, 160, 0);
+    // GrStringDrawCentered(psContext, "Now",  -1, 30, 175, 0);
+    // GrStringDrawCentered(psContext, "-10s", -1, 210, 175, 0);
 
     static char modeStr[15];
      
@@ -714,10 +781,10 @@ void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
     GrContextFontSet(psContext, &g_sFontCm34);
     GrContextForegroundSet(psContext, ClrCyan);
     usprintf(speedtext, "%d", g_ui32Speed);
-    GrStringDrawCentered(psContext, speedtext, -1, 60, 75, 1);
+    GrStringDrawCentered(psContext, speedtext, -1, 120, 75, 1);
 
     GrContextFontSet(psContext, &g_sFontCm16);
-    GrStringDraw(psContext, "Km/H", -1, 85, 75, 0);
+    GrStringDraw(psContext, "Km/H", -1, 145, 75, 0);
 
     UpdateMotorStateCanvas();
     UpdateFaultPanel();
@@ -725,6 +792,8 @@ void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
     
     // Ensure slider is painted
     WidgetPaint((tWidget *)&g_sDashboardSlider);
+    WidgetPaint((tWidget *)&g_sCanvasDash);
+
     
 }
 
@@ -931,17 +1000,47 @@ void SetMotorState(MotorState_t newState)
         return;
 
     g_eMotorState = newState;
-    
 
     if (xEventGroup)
         xEventGroupSetBits(xEventGroup, EVENT_MOTOR_STATE_CHANGE);
+
+    // === START button visibility ===
+    if (g_eMotorState == MOTOR_IDLE)
+        ShowStartButton();
+    else
+        HideStartButton();
 
     if (g_ui32Panel == 0)
     {
         UpdateMotorStateCanvas();
         UpdateFaultPanel();
     }
-        
+}
+
+void ShowStartButton(void)
+{
+    WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sStartButton);
+    g_bStartButtonVisible = true;
+
+    // Force redraw so the button actually appears
+    if (g_ui32Panel == 0)
+    {
+        WidgetPaint((tWidget *)&g_sDashboard);
+        // Extra safety: repaint root in case dashboard isn't fully active
+        WidgetPaint(WIDGET_ROOT);
+    }
+}
+
+void HideStartButton(void)
+{
+    WidgetRemove((tWidget *)&g_sStartButton);
+    g_bStartButtonVisible = false;
+
+    if (g_ui32Panel == 0)
+    {
+        WidgetPaint((tWidget *)&g_sDashboard);
+        WidgetPaint(WIDGET_ROOT);
+    }
 }
 
 void OnDashboardSliderChange(tWidget *psWidget, int32_t i32Value)
@@ -953,12 +1052,14 @@ void OnDashboardSliderChange(tWidget *psWidget, int32_t i32Value)
         usprintf(pcSliderText, "%3d", (int)i32Value);
         SliderTextSet(&g_sDashboardSlider, pcSliderText);
 
-        // Example: Link to motor speed
-        g_ui32Speed = (uint32_t)i32Value;   // 0-200 km/h example
+        g_ui32Speed = (uint32_t)i32Value;
 
-        // Refresh only the dashboard (safer than full repaint)
         if (g_ui32Panel == 0)
+        {
             WidgetPaint((tWidget *)&g_sDashboard);
+            WidgetPaint((tWidget *)&g_sCanvasDash); 
+
+        }
     }
 }
 
