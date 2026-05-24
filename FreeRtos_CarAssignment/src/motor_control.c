@@ -65,18 +65,10 @@ extern int32_t FloatToX100(float value);
 #define MOTOR_POWER_FILTER_ALPHA           0.12f
 #define MOTOR_DEFAULT_POWER_THRESHOLD_W    40.0f
 
-/*
- * Direction selector for the open-loop startup sequence.
- * 0 = original Liam sequence, 1 = reversed sequence.
- * Change to 1 later only if the motor turns/fights in the wrong direction.
- */
+
 #define MOTOR_REVERSE                     0U
 
-/*
- * The MotorLib header bundled with this project does not expose fault query/clear
- * functions. Liam's backend referenced them, so keep no-op wrappers here to
- * preserve the state machine without creating unresolved symbols at link time.
- */
+
 static void clearMotorFault(void)
 {
 }
@@ -86,11 +78,7 @@ static bool isMotorFaultActive(void)
     return false;
 }
 
-/*
- * Some versions of the prebuilt MotorLib archive declare getMotorPWMPeriod() in
- * motorlib.h but do not export the symbol. Provide the same function locally so
- * Liam's motor backend can convert duty percent into MotorLib duty ticks.
- */
+
 uint16_t getMotorPWMPeriod(void)
 {
     return (uint16_t)MOTOR_PWM_PERIOD_US;
