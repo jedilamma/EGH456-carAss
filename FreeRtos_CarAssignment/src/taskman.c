@@ -232,7 +232,6 @@ static void prvSHT31Task(void *pvParameters)
 
 void xButtonsHandler(void)
 {
-    // (Your existing ISR code - unchanged)
     BaseType_t xLEDTaskWoken = pdFALSE;
     uint32_t ui32Status = GPIOIntStatus(BUTTONS_GPIO_BASE, true);
     GPIOIntClear(BUTTONS_GPIO_BASE, ui32Status);
