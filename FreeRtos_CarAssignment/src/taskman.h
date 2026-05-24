@@ -8,6 +8,8 @@
 #define SENSOR_ID_HALL 4U // MotorSensor
 #define SENSOR_ID_SHT31 5U // Temperature/Humidity Sensor (SHT31)
 
+#include "motor_control.h"
+
 // Standard includes
 #include <stdio.h>
 #include <stdint.h>

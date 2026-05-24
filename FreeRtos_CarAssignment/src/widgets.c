@@ -938,10 +938,20 @@ void OnStartButtonPress(tWidget *psWidget)
 
     SafeUARTprintf("START button pressed\r\n");
 
-    if (g_eMotorState == MOTOR_IDLE)
+    if (g_eMotorState != MOTOR_IDLE)
     {
-        g_bMotorStartRequested = true;
+        SafeUARTprintf("START ignored: motor not idle\r\n");
+        return;
     }
+
+    if (g_ui32DesiredSpeedRPM == 0U)
+    {
+        SafeUARTprintf("START ignored: desired RPM is zero\r\n");
+        return;
+    }
+
+    g_bMotorStartRequested = true;
+    SetMotorState(MOTOR_STARTING);
 }
 
 // ====================== TIME UPDATING ======================
