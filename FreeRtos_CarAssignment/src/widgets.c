@@ -5,6 +5,8 @@
 #include "drivers/Kentec320x240x16_ssd2119_spi.h"
 #include "utils/uartstdio.h"
 
+bool g_bFaultButtonVisible = false;
+
 static void FormatSignedX100(char *buf, const char *label, int32_t value_x100, const char *unit)
 {
     const char *sign = "";
@@ -274,7 +276,7 @@ tSliderWidget g_sDashboardSlider = SliderStruct(&g_sDashboard,
                                                 0,                              // No children
                                                 &g_sKentec320x240x16_SSD2119,
                                                 10, 50, 25, 140,               // x, y, width, height  ← adjust as needed
-                                                0, 100, 0,                     // min, max, initial value
+                                                0, 3000, 0,                    // min, max, initial value
                                                 (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
                                                 SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT | SL_STYLE_VERTICAL),
                                                 ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
@@ -717,7 +719,7 @@ void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
     GrStringDrawCentered(psContext, speedtext, -1, 60, 75, 1);
 
     GrContextFontSet(psContext, &g_sFontCm16);
-    GrStringDraw(psContext, "Km/H", -1, 85, 75, 0);
+    GrStringDraw(psContext, "RPM", -1, 85, 75, 0);
 
     UpdateMotorStateCanvas();
     UpdateFaultPanel();
@@ -760,19 +762,14 @@ void OnDashButtonPress(tWidget *psWidget)
 
 void OnStartButtonPress(tWidget *psWidget)
 {
-    SafeUARTprintf("START button pressed!\r\n");
-    if (g_eMotorState == MOTOR_IDLE) 
+    (void)psWidget;
+
+    SafeUARTprintf("START button pressed\r\n");
+
+    if (g_eMotorState == MOTOR_IDLE)
     {
-        g_startDisplay = false;
-        SetMotorState(MOTOR_STARTING);
-        // Hide the START button immediately
-        //WidgetRemove((tWidget *)&g_sStartButton);
-        //WidgetPaint((tWidget *)&g_sDashboard);
+        g_bMotorStartRequested = true;
     }
-    // else
-    // {
-    //     //WidgetRemove((tWidget *)&g_sStartButton);
-    // }
 }
 
 // ====================== TIME UPDATING ======================
@@ -889,20 +886,29 @@ void UpdateMotorStateCanvas(void)
     switch (g_eMotorState)
     {
         case MOTOR_RUNNING:
-            fillColor = ClrGreen;           // Normal operation
+            fillColor = ClrGreen;
             motorStr = "RUNNING";
             break;
 
-        case MOTOR_FAULT:
-            fillColor = ClrRed;             // Fault / E-stop
-            motorStr = "FAULT";
+        case MOTOR_ESTOP_BRAKING:
+            fillColor = ClrRed;
+            motorStr = "E-STOP";
+            break;
+
+        case MOTOR_FAULT_LATCHED:
+            fillColor = ClrRed;
+            motorStr = "LATCHED";
+            break;
+
+        case MOTOR_STARTING:
+            fillColor = ClrOrange;
+            motorStr = "STARTING";
             break;
 
         case MOTOR_IDLE:
-        case MOTOR_STARTING:
         default:
-            fillColor = ClrOrange;          // Stopped / Starting
-            motorStr = (g_eMotorState == MOTOR_IDLE) ? "IDLE" : "STARTING";
+            fillColor = ClrOrange;
+            motorStr = "IDLE";
             break;
     }
 
@@ -911,7 +917,7 @@ void UpdateMotorStateCanvas(void)
     CanvasFillColorSet(&g_sMotorStateCanvas, fillColor);
     
     // Optional: Make text bold/contrasting
-    if (g_eMotorState == MOTOR_FAULT)
+    if ((g_eMotorState == MOTOR_ESTOP_BRAKING) || (g_eMotorState == MOTOR_FAULT_LATCHED))
         CanvasTextColorSet(&g_sMotorStateCanvas, ClrWhite);
     else
         CanvasTextColorSet(&g_sMotorStateCanvas, ClrBlack);
@@ -946,19 +952,24 @@ void SetMotorState(MotorState_t newState)
 
 void OnDashboardSliderChange(tWidget *psWidget, int32_t i32Value)
 {
-    static char pcSliderText[6];
+    static char pcSliderText[8];
 
     if (psWidget == (tWidget *)&g_sDashboardSlider)
     {
-        usprintf(pcSliderText, "%3d", (int)i32Value);
+        if (i32Value < 0)
+        {
+            i32Value = 0;
+        }
+
+        g_ui32DesiredSpeedRPM = (uint32_t)i32Value;
+
+        usprintf(pcSliderText, "%4d", (int)i32Value);
         SliderTextSet(&g_sDashboardSlider, pcSliderText);
 
-        // Example: Link to motor speed
-        g_ui32Speed = (uint32_t)i32Value;   // 0-200 km/h example
-
-        // Refresh only the dashboard (safer than full repaint)
         if (g_ui32Panel == 0)
-            WidgetPaint((tWidget *)&g_sDashboard);
+        {
+            WidgetPaint((tWidget *)&g_sDashboardSlider);
+        }
     }
 }
 
@@ -1129,16 +1140,17 @@ void UpdateFaultPanel(void)
 
 void OnClearFaultButtonPress(tWidget *psWidget)
 {
-    SafeUARTprintf("ACK FAULT button pressed - Clearing faults and resuming motor!\r\n");
-    
+    (void)psWidget;
+
+    SafeUARTprintf("XF pressed - fault acknowledgement requested\r\n");
+
     g_bFaultAcknowledged = true;
-    g_ui32ActiveFaults = 0;
-    g_bFaultButtonVisible = false;          // force hidden state
-    
-    SetMotorState(MOTOR_IDLE);
-    
-    // UpdateFaultPanel() will now correctly hide it
-    UpdateFaultPanel();
+    g_bMotorFaultAckRequested = true;
+
+    if (xEventGroup)
+    {
+        xEventGroupSetBits(xEventGroup, EVENT_FAULT_ACK);
+    }
 }
 
 

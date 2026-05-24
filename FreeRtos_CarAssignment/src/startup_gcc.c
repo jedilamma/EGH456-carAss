@@ -53,7 +53,9 @@ extern void xTimerHandler(void);
 extern void xButtonsHandler(void);
 extern void I2C0IntHandler(void);
 extern void xOPT_INT_Handler(void);
-extern void xBMI160DRDYHandler(void);
+// extern void xBMI160DRDYHandler(void); // Temporarily disabled
+extern void xHallPortHHandler(void);
+extern void xHallPortMHandler(void);
 //*****************************************************************************
 //
 // The entry point for the application.
@@ -95,7 +97,7 @@ void (* const g_pfnVectors[])(void) =
     xPortPendSVHandler,                     // The PendSV handler
     xPortSysTickHandler,                    // The SysTick handler
     IntDefaultHandler,                      // GPIO Port A
-    xBMI160DRDYHandler,                      // GPIO Port B (BMI160 DRDY)
+    IntDefaultHandler,                      // GPIO Port B (BMI160 DRDY)
     IntDefaultHandler,                      // GPIO Port C
     IntDefaultHandler,                      // GPIO Port D
     IntDefaultHandler,                      // GPIO Port E
@@ -113,11 +115,11 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // ADC Sequence 2
     TouchScreenIntHandler,                  // ADC Sequence 3
     IntDefaultHandler,                      // Watchdog timer
-    xTimerHandler,                          // Timer 0 subtimer A
+    IntDefaultHandler,                      // Timer 0 subtimer A
     IntDefaultHandler,                      // Timer 0 subtimer B
     IntDefaultHandler,                      // Timer 1 subtimer A
     IntDefaultHandler,                      // Timer 1 subtimer B
-    IntDefaultHandler,                      // Timer 2 subtimer A
+    xTimerHandler,                          // Timer 2 subtimer A
     IntDefaultHandler,                      // Timer 2 subtimer B
     IntDefaultHandler,                      // Analog Comparator 0
     IntDefaultHandler,                      // Analog Comparator 1
@@ -126,7 +128,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // FLASH Control
     IntDefaultHandler,                      // GPIO Port F
     IntDefaultHandler,                      // GPIO Port G
-    IntDefaultHandler,                      // GPIO Port H
+    xHallPortHHandler,                      // GPIO Port H
     IntDefaultHandler,                      // UART2 Rx and Tx
     IntDefaultHandler,                      // SSI1 Rx and Tx
     IntDefaultHandler,                      // Timer 3 subtimer A
@@ -145,7 +147,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // ADC1 Sequence 2
     IntDefaultHandler,                      // ADC1 Sequence 3
     IntDefaultHandler,                      // External Bus Interface 0
-    IntDefaultHandler,//xButtonsHandler,                        // GPIO Port J
+    xButtonsHandler,                        // GPIO Port J
     IntDefaultHandler,                      // GPIO Port K
     IntDefaultHandler,                      // GPIO Port L
     IntDefaultHandler,                      // SSI2 Rx and Tx
@@ -166,7 +168,7 @@ void (* const g_pfnVectors[])(void) =
     0,                                      // Reserved
     IntDefaultHandler,                      // I2C4 Master and Slave
     IntDefaultHandler,                      // I2C5 Master and Slave
-    IntDefaultHandler,                      // GPIO Port M
+    xHallPortMHandler,                      // GPIO Port M
     IntDefaultHandler,                      // GPIO Port N
     0,                                      // Reserved
     IntDefaultHandler,                      // Tamper

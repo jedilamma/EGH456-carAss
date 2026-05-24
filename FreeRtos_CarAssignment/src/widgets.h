@@ -19,7 +19,8 @@ typedef enum
     MOTOR_IDLE = 0,
     MOTOR_STARTING,
     MOTOR_RUNNING,
-    MOTOR_FAULT
+    MOTOR_ESTOP_BRAKING,
+    MOTOR_FAULT_LATCHED
 } MotorState_t;
 
 // Main Panels
@@ -80,6 +81,15 @@ extern volatile uint8_t  g_ui8Day, g_ui8Month;
 extern volatile uint16_t g_ui16Year;
 extern volatile int16_t  g_i16MotorValue;
 extern uint16_t g_ui32Speed;
+extern volatile uint32_t g_ui32DesiredSpeedRPM;
+extern volatile bool g_bMotorStartRequested;
+extern volatile bool g_bMotorStopRequested;
+extern volatile bool g_bMotorFaultAckRequested;
+
+extern volatile uint32_t g_ui32MotorReferenceRPM;
+extern volatile uint32_t g_ui32MotorActualRPM;
+extern volatile uint32_t g_ui32MotorPWMPercent;
+extern volatile uint32_t g_ui32MotorPowerW;
 // Bottom Navigation
 extern char *g_pcPanei32Names[];
 
@@ -93,7 +103,7 @@ extern bool g_bIMUDisplayHold;
 extern bool g_bDisplayHold;
 extern bool g_faultSwitch;
 extern bool g_startDisplay;
-extern bool g_bFaultAcknowledged;
+extern volatile bool g_bFaultAcknowledged;
 extern bool g_bFaultButtonVisible;
 
 tCanvasWidget g_sDashboard;

@@ -1,5 +1,36 @@
 #include "taskman.h"
 #include "temp_humidity.h" // Adds the SHT31 temperature/humidity wrapper
+#include "motorlib.h"      // Motor control library header
+
+// Motor Control Constants
+#define MOTOR_TASK_PERIOD_MS              5U
+#define MOTOR_SPEED_UPDATE_PERIOD_MS      10U
+
+#define MOTOR_PWM_PERIOD_US               50U
+#define MOTOR_MIN_DUTY_US                 5U
+#define MOTOR_START_DUTY_US               7U
+
+#define MOTOR_MAX_RPM                     3000U
+#define MOTOR_HALL_EDGES_PER_REV          6U
+
+#define MOTOR_ACCEL_LIMIT_RPM_PER_S       500U
+#define MOTOR_DECEL_LIMIT_RPM_PER_S       500U
+#define MOTOR_ESTOP_DECEL_RPM_PER_S       1000U
+
+#define MOTOR_START_FEEDBACK_EDGES        3U
+#define MOTOR_STOPPED_RPM_THRESHOLD       30U
+
+#define MOTOR_PLOT_PERIOD_MS              50U
+
+// Pin definitions
+#define HALL_A_GPIO_PERIPH     SYSCTL_PERIPH_GPIOM
+#define HALL_A_GPIO_BASE       GPIO_PORTM_BASE
+#define HALL_A_GPIO_PIN        GPIO_PIN_3
+
+#define HALL_BC_GPIO_PERIPH    SYSCTL_PERIPH_GPIOH
+#define HALL_BC_GPIO_BASE      GPIO_PORTH_BASE
+#define HALL_B_GPIO_PIN        GPIO_PIN_2
+#define HALL_C_GPIO_PIN        GPIO_PIN_3
 
 // Hardware drivers for buttons and LEDs
 static void prvOptTask(void *pvParameters);
@@ -7,14 +38,13 @@ static void prvLEDTasksw1(void *pvParameters);
 static void readerTask(void *pvParameters);
 static void prvDisplayTask(void *pvParameters);
 static void prvMotorTask(void *pvParameters);
-static void prvFaultSimulatorTask(void *pvParameters);
+// static void prvFaultSimulatorTask(void *pvParameters);
 static void prvIMUTask(void *pvParameters);
 static void prvSHT31Task(void *pvParameters); // SHT31 task prototype
+static void prvConfigureHallSensors(void); // Hall sensor configuration prototype
 
 // Data format helpers for OPT3001 and SHT31
 static uint32_t UpdateLuxAverage(uint32_t newLux);
-static int32_t FloatToX100(float value);
-static uint32_t FloatToUX100(float value);
 
 static void prvConfigureLED(void);
 static void prvConfigureButton(void);
@@ -53,6 +83,9 @@ uint32_t g_plotIMURawHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotIMUFiltHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotIMUIndex = 0;
 
+uint32_t g_plotIMUxHistory[PLOT_HISTORY_SIZE] = {0};
+uint32_t g_plotIMUyHistory[PLOT_HISTORY_SIZE] = {0};
+
 PlotMode_t g_eOPTPlotMode = OPT_PLOT_MODE_FILTERED_ONLY;
 PlotMode_t g_eIMUPlotMode = IMU_PLOT_MODE_FILTERED_ONLY; // Fixed typo in declaration as taskman.h expects g_eIMUPlotMode
 PlotMode_t g_ePlotMode = IMU_PLOT_MODE_FILTERED_ONLY;
@@ -82,11 +115,81 @@ uint32_t g_ui32CabinHumidityRHx100 = 0;
 int32_t  g_i32HeatingThresholdCx100 = 1800;
 int32_t  g_i32CoolingThresholdCx100 = 2600;
 
-uint16_t g_ui32Speed = 0;
+uint16_t g_ui32Speed = 0; // Gui-facing speed variable (RPM)
+
+// Motor Control Variables
+extern volatile uint32_t g_ui32DesiredSpeedRPM; // User request from slider
+extern volatile bool g_bMotorStartRequested;
+extern volatile bool g_bMotorStopRequested;
+extern volatile bool g_bMotorFaultAckRequested;
+volatile bool g_bFaultAcknowledged = false;
+
+extern volatile uint32_t g_ui32MotorReferenceRPM; // Ramped reference speed
+extern volatile uint32_t g_ui32MotorActualRPM; // Measured hall sensor speed
+extern volatile uint32_t g_ui32MotorPWMPercent;
+extern volatile uint32_t g_ui32MotorPowerW;
+
+// Motor Runtime Globals
+volatile uint32_t g_ui32DesiredSpeedRPM = 0;
+volatile bool g_bMotorStartRequested = false;
+volatile bool g_bMotorStopRequested = false;
+volatile bool g_bMotorFaultAckRequested = false;
+
+volatile uint32_t g_ui32MotorReferenceRPM = 0;
+volatile uint32_t g_ui32MotorActualRPM = 0;
+volatile uint32_t g_ui32MotorPWMPercent = 0;
+volatile uint32_t g_ui32MotorPowerW = 0;
+
+static volatile uint32_t g_ui32HallEdgeCount = 0;
+static volatile uint32_t g_ui32HallEdgeTotal = 0;
+static bool g_bMotorLibReady = false;
+
+static int32_t g_i32ReferenceRPMx100 = 0;
+static int32_t g_i32PIIntegral = 0;
+static uint16_t g_ui16MotorDutyUs = 0;
 
 tContext sContext;
 
 QueueHandle_t xQueue = NULL;
+
+static void prvConfigureHallSensors(void)
+{
+    SysCtlPeripheralEnable(HALL_A_GPIO_PERIPH);
+    SysCtlPeripheralEnable(HALL_BC_GPIO_PERIPH);
+
+    while (!SysCtlPeripheralReady(HALL_A_GPIO_PERIPH)) {}
+    while (!SysCtlPeripheralReady(HALL_BC_GPIO_PERIPH)) {}
+
+    GPIOPinTypeGPIOInput(HALL_A_GPIO_BASE, HALL_A_GPIO_PIN);
+    GPIOPinTypeGPIOInput(HALL_BC_GPIO_BASE, HALL_B_GPIO_PIN | HALL_C_GPIO_PIN);
+
+    GPIOPadConfigSet(HALL_A_GPIO_BASE,
+                     HALL_A_GPIO_PIN,
+                     GPIO_STRENGTH_2MA,
+                     GPIO_PIN_TYPE_STD_WPU);
+
+    GPIOPadConfigSet(HALL_BC_GPIO_BASE,
+                     HALL_B_GPIO_PIN | HALL_C_GPIO_PIN,
+                     GPIO_STRENGTH_2MA,
+                     GPIO_PIN_TYPE_STD_WPU);
+
+    GPIOIntDisable(HALL_A_GPIO_BASE, HALL_A_GPIO_PIN);
+    GPIOIntDisable(HALL_BC_GPIO_BASE, HALL_B_GPIO_PIN | HALL_C_GPIO_PIN);
+
+    GPIOIntClear(HALL_A_GPIO_BASE, HALL_A_GPIO_PIN);
+    GPIOIntClear(HALL_BC_GPIO_BASE, HALL_B_GPIO_PIN | HALL_C_GPIO_PIN);
+
+    GPIOIntTypeSet(HALL_A_GPIO_BASE, HALL_A_GPIO_PIN, GPIO_BOTH_EDGES);
+    GPIOIntTypeSet(HALL_BC_GPIO_BASE,
+                   HALL_B_GPIO_PIN | HALL_C_GPIO_PIN,
+                   GPIO_BOTH_EDGES);
+
+    GPIOIntEnable(HALL_A_GPIO_BASE, HALL_A_GPIO_PIN);
+    GPIOIntEnable(HALL_BC_GPIO_BASE, HALL_B_GPIO_PIN | HALL_C_GPIO_PIN);
+
+    IntEnable(INT_GPIOM);
+    IntEnable(INT_GPIOH);
+}
 
 void vCreateTask(void)
 {
@@ -94,15 +197,16 @@ void vCreateTask(void)
     prvConfigureButton();
     prvConfigureOPT();
     prvConfigure();   
-    prvConfigureHWTimer();                  
+    prvConfigureHWTimer();         
+    prvConfigureHallSensors();         
     SetTimeFromCompileTime();
     
     xTaskCreate(prvLEDTasksw1,      "LED",     configMINIMAL_STACK_SIZE * 2, NULL, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(prvIMUTask,         "IMU",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL); 
     xTaskCreate(prvOptTask,         "OPT",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL);    
     xTaskCreate(prvDisplayTask,     "DISPLAY", configMINIMAL_STACK_SIZE * 12, NULL, tskIDLE_PRIORITY + 3, NULL);  // biggest
-    xTaskCreate(prvFaultSimulatorTask, "FAULTSIM", configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(prvMotorTask,       "MOTOR",   configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
+ // xTaskCreate(prvFaultSimulatorTask, "FAULTSIM", configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(prvMotorTask, "MOTOR", configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 4, NULL);
     xTaskCreate(prvSHT31Task,       "SHT31",    configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL); // Create the SHT31 sampling/filtering task
 
     SafeUARTprintf("All tasks created successfully!\r\n");
@@ -266,7 +370,7 @@ static void readerTask(void *pvParameters)
 
         if (uxBits & EVENT_MOTOR_STATE_CHANGE)
         {
-            if (g_eMotorState == MOTOR_FAULT)
+            if (g_eMotorState == MOTOR_ESTOP_BRAKING || g_eMotorState == MOTOR_FAULT_LATCHED)
             {
                 g_ui32ActiveFaults |= FAULT_EBRAKE;
             }
@@ -364,8 +468,19 @@ static void readerTask(void *pvParameters)
                         break;
                     }
 
-                    g_plotIMURawHistory[g_plotIMUIndex] = (uint32_t)pData->val;
-                    g_plotIMUFiltHistory[g_plotIMUIndex] = pData->avg;
+                    uint32_t imuX = (uint32_t)pData->val;
+                    uint32_t imuY = (uint32_t)pData->avg;
+                    uint32_t imuZ = (uint32_t)pData->val2;
+                    uint32_t imuMag = (uint32_t)pData->avg2;
+
+                    g_plotIMUxHistory[g_plotIMUIndex] = imuX;
+                    g_plotIMUyHistory[g_plotIMUIndex] = imuY;
+
+                    g_plotIMURawHistory[g_plotIMUIndex] = imuZ;
+                    g_plotIMUFiltHistory[g_plotIMUIndex] = imuMag;
+
+                    g_ui32FilteredBodyAccel = imuMag;
+
                     g_plotIMUIndex = (g_plotIMUIndex + 1) % PLOT_HISTORY_SIZE;
 
                     if (g_ui32Panel == 3)
@@ -439,7 +554,17 @@ static void readerTask(void *pvParameters)
                 }
             }
         }
+        if ((g_ui32FilteredBodyAccel > g_ui32CrashThreshold) ||
+            (g_ui32CurrentDistance < g_ui32DetRangeVal) ||
+            (g_ui32MotorPowerW > 0U && g_ui32MotorPowerW > 120U))   // temporary threshold until GUI power slider exists
+        {
+            g_ui32ActiveFaults |= FAULT_EBRAKE;
 
+            if (xEventGroup)
+            {
+                xEventGroupSetBits(xEventGroup, EVENT_FAULT_ESTOP);
+            }
+        }
         vTaskDelay(pdMS_TO_TICKS(mainRECEIVER_DELAY_MS));
     }
 }
@@ -469,25 +594,33 @@ static void prvIMUTask(void *pvParameters)
         {
             if (sensorBMI160ReadAccel(&raw))
             {
-                // Do almost nothing - just send raw values
-                msg.id   = SENSOR_ID_IMU; // Use defined sensor ID for IMU instead of magic number
-                msg.val  = raw.x;      // raw LSB values
-                msg.avg  = raw.y;
+                uint32_t absX = (raw.x < 0) ? (uint32_t)(-raw.x) : (uint32_t)raw.x;
+                uint32_t absY = (raw.y < 0) ? (uint32_t)(-raw.y) : (uint32_t)raw.y;
+                uint32_t absZ = (raw.z < 0) ? (uint32_t)(-raw.z) : (uint32_t)raw.z;
+
+                g_ui32FilteredBodyAccel = absX + absY + absZ;
+
+                msg.id   = SENSOR_ID_IMU;
+                msg.val  = (int32_t)absX;
+                msg.avg  = (int32_t)absY;
+                msg.val2 = (int32_t)absZ;
+                msg.avg2 = (int32_t)g_ui32FilteredBodyAccel;
                 msg.flag = 0;
+
                 if (xQueueSend(xQueue, &msg, 0) != pdPASS)
                 {
-                    // Report queue overflow if IMU cannot send.
                     xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
                 }
                 else
                 {
-                    // Wake readerTask when IMU data is queued
                     xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY);
-                }             
+                }
             }
+
             xSemaphoreGive(xI2CMutex);
         }
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200));
+
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(10));
     }
 }
 
@@ -515,28 +648,6 @@ static uint32_t UpdateLuxAverage(uint32_t newLux)
     }
 
     return luxSum / luxCount;
-}
-
-static int32_t FloatToX100(float value)
-{
-    // Convert signed float to integer x100
-    if (value >= 0.0f)
-    {
-        return (int32_t)((value * 100.0f) + 0.5f);
-    }
-
-    return (int32_t)((value * 100.0f) - 0.5f);
-}
-
-static uint32_t FloatToUX100(float value)
-{
-    // Convert unsigned float to integer x100
-    if (value <= 0.0f)
-    {
-        return 0U;
-    }
-
-    return (uint32_t)((value * 100.0f) + 0.5f);
 }
 
 // ====================== OPT3001 Optical sensor TASK ======================
@@ -778,77 +889,357 @@ static void prvConfigureButton( void )
 
 static void prvConfigureHWTimer(void)
 {
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
-    TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC);
-    TimerLoadSet(TIMER0_BASE, TIMER_A, g_ui32SysClock / 5);
-    TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
-    IntEnable(INT_TIMER0A);
-    IntMasterEnable();
-    TimerEnable(TIMER0_BASE, TIMER_A);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER2);
+    while (!SysCtlPeripheralReady(SYSCTL_PERIPH_TIMER2)) {}
+
+    TimerConfigure(TIMER2_BASE, TIMER_CFG_PERIODIC);
+    TimerLoadSet(TIMER2_BASE, TIMER_A, g_ui32SysClock / 5);
+    TimerIntEnable(TIMER2_BASE, TIMER_TIMA_TIMEOUT);
+
+    IntEnable(INT_TIMER2A);
+    TimerEnable(TIMER2_BASE, TIMER_A);
 }
 
 void xTimerHandler(void)
 {
-    TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
+    TimerIntClear(TIMER2_BASE, TIMER_TIMA_TIMEOUT);
     calcTimeCount();
-
     UpdateTime();
+}
+
+// Hall Helper Functions
+static bool Motor_ReadHallA(void)
+{
+    return (GPIOPinRead(HALL_A_GPIO_BASE, HALL_A_GPIO_PIN) != 0);
+}
+
+static bool Motor_ReadHallB(void)
+{
+    return (GPIOPinRead(HALL_BC_GPIO_BASE, HALL_B_GPIO_PIN) != 0);
+}
+
+static bool Motor_ReadHallC(void)
+{
+    return (GPIOPinRead(HALL_BC_GPIO_BASE, HALL_C_GPIO_PIN) != 0);
+}
+
+static void Motor_UpdateCommutationFromHall(void)
+{
+    if (!g_bMotorLibReady)
+    {
+        return;
+    }
+
+    updateMotor(Motor_ReadHallA(),
+                Motor_ReadHallB(),
+                Motor_ReadHallC());
+}
+
+// Hall ISRs
+void xHallPortMHandler(void)
+{
+    uint32_t status = GPIOIntStatus(HALL_A_GPIO_BASE, true);
+    GPIOIntClear(HALL_A_GPIO_BASE, status);
+
+    if (status & HALL_A_GPIO_PIN)
+    {
+        g_ui32HallEdgeCount++;
+        g_ui32HallEdgeTotal++;
+        Motor_UpdateCommutationFromHall();
+    }
+}
+
+void xHallPortHHandler(void)
+{
+    uint32_t status = GPIOIntStatus(HALL_BC_GPIO_BASE, true);
+    GPIOIntClear(HALL_BC_GPIO_BASE, status);
+
+    if (status & (HALL_B_GPIO_PIN | HALL_C_GPIO_PIN))
+    {
+        g_ui32HallEdgeCount++;
+        g_ui32HallEdgeTotal++;
+        Motor_UpdateCommutationFromHall();
+    }
+}
+
+static uint32_t Motor_UpdateActualSpeedRPM(void)
+{
+    uint32_t edges;
+
+    taskENTER_CRITICAL();
+    edges = g_ui32HallEdgeCount;
+    g_ui32HallEdgeCount = 0;
+    taskEXIT_CRITICAL();
+
+    // Speed update period is 10 ms = 100 Hz
+    uint32_t rpm = (edges * 60U * 100U) / MOTOR_HALL_EDGES_PER_REV;
+
+    g_ui32MotorActualRPM = rpm;
+    g_ui32Speed = (uint16_t)rpm;     // GUI-facing actual RPM
+
+    return rpm;
+}
+
+static void Motor_UpdateReferenceRPM(bool estopActive)
+{
+    int32_t targetRPMx100;
+    int32_t currentRPMx100;
+    int32_t maxStepRPMx100;
+
+    if (estopActive)
+    {
+        targetRPMx100 = 0;
+        maxStepRPMx100 = (int32_t)(MOTOR_ESTOP_DECEL_RPM_PER_S * 100U * MOTOR_TASK_PERIOD_MS / 1000U);
+    }
+    else
+    {
+        targetRPMx100 = (int32_t)(g_ui32DesiredSpeedRPM * 100U);
+
+        if (targetRPMx100 > g_i32ReferenceRPMx100)
+        {
+            maxStepRPMx100 = (int32_t)(MOTOR_ACCEL_LIMIT_RPM_PER_S * 100U * MOTOR_TASK_PERIOD_MS / 1000U);
+        }
+        else
+        {
+            maxStepRPMx100 = (int32_t)(MOTOR_DECEL_LIMIT_RPM_PER_S * 100U * MOTOR_TASK_PERIOD_MS / 1000U);
+        }
+    }
+
+    currentRPMx100 = g_i32ReferenceRPMx100;
+
+    if (targetRPMx100 > currentRPMx100 + maxStepRPMx100)
+    {
+        currentRPMx100 += maxStepRPMx100;
+    }
+    else if (targetRPMx100 < currentRPMx100 - maxStepRPMx100)
+    {
+        currentRPMx100 -= maxStepRPMx100;
+    }
+    else
+    {
+        currentRPMx100 = targetRPMx100;
+    }
+
+    if (currentRPMx100 < 0)
+    {
+        currentRPMx100 = 0;
+    }
+
+    g_i32ReferenceRPMx100 = currentRPMx100;
+    g_ui32MotorReferenceRPM = (uint32_t)(currentRPMx100 / 100);
+}
+
+static void Motor_UpdatePWMController(void)
+{
+    int32_t referenceRPM = (int32_t)g_ui32MotorReferenceRPM;
+    int32_t actualRPM = (int32_t)g_ui32MotorActualRPM;
+    int32_t errorRPM = referenceRPM - actualRPM;
+
+    if (referenceRPM <= 0)
+    {
+        g_i32PIIntegral = 0;
+        g_ui16MotorDutyUs = 0;
+        setDuty(0);
+        g_ui32MotorPWMPercent = 0;
+        return;
+    }
+
+    g_i32PIIntegral += errorRPM;
+
+    if (g_i32PIIntegral > 60000)
+    {
+        g_i32PIIntegral = 60000;
+    }
+    else if (g_i32PIIntegral < -60000)
+    {
+        g_i32PIIntegral = -60000;
+    }
+
+    int32_t ffDuty = MOTOR_MIN_DUTY_US +
+        ((referenceRPM * (MOTOR_PWM_PERIOD_US - MOTOR_MIN_DUTY_US)) / MOTOR_MAX_RPM);
+
+    int32_t duty = ffDuty + (errorRPM / 80) + (g_i32PIIntegral / 5000);
+
+    if (duty < 0)
+    {
+        duty = 0;
+    }
+    else if (duty > MOTOR_PWM_PERIOD_US)
+    {
+        duty = MOTOR_PWM_PERIOD_US;
+    }
+
+    g_ui16MotorDutyUs = (uint16_t)duty;
+    setDuty(g_ui16MotorDutyUs);
+
+    g_ui32MotorPWMPercent = ((uint32_t)g_ui16MotorDutyUs * 100U) / MOTOR_PWM_PERIOD_US;
 }
 
 static void prvMotorTask(void *pvParameters)
 {
     (void)pvParameters;
-    
-    SafeUARTprintf("=== Motor Task Started ===\r\n");
-    
+
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    
+    TickType_t lastSpeedUpdate = xLastWakeTime;
+    TickType_t lastPlotUpdate = xLastWakeTime;
+
+    uint32_t startingEdgeBaseline = 0;
+
+    SafeUARTprintf("=== Motor Control Task Started ===\r\n");
+
+    if (!initMotorLib(MOTOR_PWM_PERIOD_US))
+    {
+        SafeUARTprintf("ERROR: initMotorLib failed\r\n");
+        g_ui32ActiveFaults |= FAULT_SENSOR;
+        SetMotorState(MOTOR_FAULT_LATCHED);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    g_bMotorLibReady = true;
+
+    disableMotor();
+    stopMotor(false);
+    setDuty(0);
+
+    SafeUARTprintf("desired_rpm,reference_rpm,actual_rpm,pwm_percent,power_w,state,faults\r\n");
+
     for (;;)
     {
+        EventBits_t bits = xEventGroupGetBits(xEventGroup);
+
+        bool estopRequested = ((bits & EVENT_FAULT_ESTOP) != 0U) ||
+                              ((g_ui32ActiveFaults & FAULT_EBRAKE) != 0U);
+
+        if ((xTaskGetTickCount() - lastSpeedUpdate) >= pdMS_TO_TICKS(MOTOR_SPEED_UPDATE_PERIOD_MS))
+        {
+            Motor_UpdateActualSpeedRPM();
+            lastSpeedUpdate = xTaskGetTickCount();
+        }
+
         switch (g_eMotorState)
         {
             case MOTOR_IDLE:
-                // Simulate start request (e.g. from button or command)
-                vTaskDelay(pdMS_TO_TICKS(3000));        // Stay in IDLE for 3 seconds
-                SetMotorState(MOTOR_STARTING);
+            {
+                disableMotor();
+                stopMotor(false);
+                setDuty(0);
+
+                g_i32PIIntegral = 0;
+                g_i32ReferenceRPMx100 = 0;
+                g_ui32MotorReferenceRPM = 0;
+                g_ui32MotorPWMPercent = 0;
+
+                if (g_bMotorStartRequested)
+                {
+                    g_bMotorStartRequested = false;
+                    startingEdgeBaseline = g_ui32HallEdgeTotal;
+
+                    enableMotor();
+                    setDuty(MOTOR_START_DUTY_US);
+                    Motor_UpdateCommutationFromHall();
+
+                    SetMotorState(MOTOR_STARTING);
+                }
                 break;
+            }
 
             case MOTOR_STARTING:
-                SafeUARTprintf("Motor STARTING...\r\n");
-                vTaskDelay(pdMS_TO_TICKS(2000));        // Starting sequence
-                SetMotorState(MOTOR_RUNNING);
+            {
+                if (estopRequested)
+                {
+                    SetMotorState(MOTOR_ESTOP_BRAKING);
+                    break;
+                }
+
+                enableMotor();
+                setDuty(MOTOR_START_DUTY_US);
+                Motor_UpdateCommutationFromHall();
+
+                if ((g_ui32HallEdgeTotal - startingEdgeBaseline) >= MOTOR_START_FEEDBACK_EDGES)
+                {
+                    g_i32ReferenceRPMx100 = (int32_t)(g_ui32MotorActualRPM * 100U);
+                    SetMotorState(MOTOR_RUNNING);
+                }
                 break;
+            }
 
             case MOTOR_RUNNING:
-                SafeUARTprintf("Motor RUNNING - Normal operation\r\n");
-                vTaskDelay(pdMS_TO_TICKS(8000));        // Run for 8 seconds
-                
-                // Random chance to create a fault (for demo)
-                if ((rand() % 5) == 0)                  // ~20% chance
-                    SetMotorState(MOTOR_FAULT);
-                else
-                    SetMotorState(MOTOR_IDLE);          // Back to idle
-                break;
+            {
+                if (estopRequested)
+                {
+                    SetMotorState(MOTOR_ESTOP_BRAKING);
+                    break;
+                }
 
-            case MOTOR_FAULT:
-                SafeUARTprintf("!!! MOTOR FAULT !!!\r\n");
-                g_ui32ActiveFaults |= FAULT_EBRAKE | FAULT_OVERCURRENT;
-                vTaskDelay(pdMS_TO_TICKS(5000));        // Stay in fault for 5s
-                
-                // Auto recover for demo
-                g_ui32ActiveFaults = 0;
-                SetMotorState(MOTOR_IDLE);
+                Motor_UpdateReferenceRPM(false);
+                Motor_UpdatePWMController();
                 break;
+            }
+
+            case MOTOR_ESTOP_BRAKING:
+            {
+                g_ui32ActiveFaults |= FAULT_EBRAKE;
+
+                Motor_UpdateReferenceRPM(true);
+                Motor_UpdatePWMController();
+
+                if ((g_ui32MotorReferenceRPM == 0U) &&
+                    (g_ui32MotorActualRPM <= MOTOR_STOPPED_RPM_THRESHOLD))
+                {
+                    setDuty(0);
+                    stopMotor(false);
+                    disableMotor();
+                    SetMotorState(MOTOR_FAULT_LATCHED);
+                }
+                break;
+            }
+
+            case MOTOR_FAULT_LATCHED:
+            {
+                setDuty(0);
+                stopMotor(false);
+                disableMotor();
+
+                if (g_bMotorFaultAckRequested)
+                {
+                    g_bMotorFaultAckRequested = false;
+
+                    g_ui32ActiveFaults = 0;
+                    xEventGroupClearBits(xEventGroup, EVENT_FAULT_ESTOP | EVENT_FAULT_ACK);
+
+                    SetMotorState(MOTOR_IDLE);
+                }
+                break;
+            }
 
             default:
+            {
                 SetMotorState(MOTOR_IDLE);
                 break;
+            }
         }
 
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100)); // Small tick
+        if ((xTaskGetTickCount() - lastPlotUpdate) >= pdMS_TO_TICKS(MOTOR_PLOT_PERIOD_MS))
+        {
+            SafeUARTprintf("%u,%u,%u,%u,%u,%u,0x%02X\r\n",
+                           (unsigned int)g_ui32DesiredSpeedRPM,
+                           (unsigned int)g_ui32MotorReferenceRPM,
+                           (unsigned int)g_ui32MotorActualRPM,
+                           (unsigned int)g_ui32MotorPWMPercent,
+                           (unsigned int)g_ui32MotorPowerW,
+                           (unsigned int)g_eMotorState,
+                           (unsigned int)g_ui32ActiveFaults);
+
+            lastPlotUpdate = xTaskGetTickCount();
+        }
+
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(MOTOR_TASK_PERIOD_MS));
     }
 }
 
+// Commented out fake fault simulator 
+/*
 static void prvFaultSimulatorTask(void *pvParameters)
 {
     (void)pvParameters;
@@ -911,14 +1302,14 @@ static void prvFaultSimulatorTask(void *pvParameters)
 
         // Heating / Cooling logic - Commented out since its now sensor-driven
         
-        /*
+        
         if (g_ui32EngineTemp > g_ui32HeatingThreshold)
             g_bCoolingOn = true;
         else if (g_ui32EngineTemp < g_ui32CoolingThreshold)
             g_bCoolingOn = false;
-        */
+        
 
-        // // Update Engine Panel live values
+        // Update Engine Panel live values
         // if (g_ui32Panel == 1)
         // {
         //     WidgetPaint((tWidget *)&g_sEngineCanvas);
@@ -927,3 +1318,4 @@ static void prvFaultSimulatorTask(void *pvParameters)
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(4000));  // Every 4 seconds
     }
 }
+*/

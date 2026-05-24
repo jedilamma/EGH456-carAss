@@ -96,7 +96,7 @@ extern bool g_bHeatingOn;
 extern bool g_bSHT31Valid;
 extern bool g_faultSwitch;
 extern bool g_startDisplay;
-extern bool g_bFaultAcknowledged;
+extern volatile bool g_bFaultAcknowledged;
 extern int32_t  g_i32CabinTempCx100;
 extern uint32_t g_ui32CabinHumidityRHx100;
 
@@ -144,14 +144,17 @@ extern uint32_t g_ui32ActiveWarnings;
 extern uint32_t g_ui32ActiveSafety;
 
 // Event Bits
-#define EVENT_LUXHIGH_THRESHOLD     (1U << 0)
-#define EVENT_LUXLOW_THRESHOLD      (1U << 1)
-#define EVENT_SENSOR_MISSED      (1U << 2)
-#define EVENT_QUEUE_FULL         (1U << 3)
-#define EVENT_BTN_TOGGLE_PLOT    (1U << 4)
-#define EVENT_DISPLAY_HOLD       (1U << 5)
-#define EVENT_MOTOR_STATE_CHANGE (1U << 6)
-#define EVENT_ALL_BITS           (0xFFU)
+#define EVENT_HIGH_THRESHOLD        (1U << 0)
+#define EVENT_LOW_THRESHOLD         (1U << 1)
+#define EVENT_SENSOR_MISSED         (1U << 2)
+#define EVENT_QUEUE_FULL            (1U << 3)
+#define EVENT_BTN_TOGGLE_PLOT       (1U << 4)
+#define EVENT_DISPLAY_HOLD          (1U << 5)
+#define EVENT_MOTOR_STATE_CHANGE    (1U << 6)
+#define EVENT_SENSOR_DATA_READY     (1U << 7)
+#define EVENT_FAULT_ESTOP           (1U << 8)
+#define EVENT_FAULT_ACK             (1U << 9)
+#define EVENT_ALL_BITS              (0x3FFU)
 
 // ====================== QUEUE + TASK PRIORITIES ======================
 #define mainQUEUE_LENGTH                    ( 30U )
