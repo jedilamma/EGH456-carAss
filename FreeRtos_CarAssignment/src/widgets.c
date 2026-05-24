@@ -889,6 +889,15 @@ void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
     GrContextFontSet(psContext, &g_sFontCm16);
     GrStringDraw(psContext, "Km/H", -1, 145, 75, 0);
 
+
+    GrContextFontSet(psContext, &g_sFontCm20);
+    GrContextForegroundSet(psContext, ClrCyan);
+    usprintf(speedtext, "%d", g_ui32PowerW);
+    GrStringDrawCentered(psContext, speedtext, -1, 120, 160, 1);
+
+    GrContextFontSet(psContext, &g_sFontCm12);
+    GrStringDraw(psContext, "Watts", -1, 145, 160, 0);
+
     UpdateMotorStateCanvas();
     UpdateFaultPanel();
     UpdateTemp(psContext);
@@ -1033,11 +1042,25 @@ void OnFaultPanelPaint(tWidget *psWidget, tContext *psContext)
     GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_OVERCURRENT) ? ClrRed : ClrDarkGray);
     GrStringDraw(psContext, "OCURR", -1, 120, 200, 0);
 
-    GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_OVERTEMP) ? ClrRed : ClrDarkGray);
-    GrStringDraw(psContext, "OTEMP", -1, 50, 220, 0);
+    if((g_ui32ActiveFaults & FAULT_OVERTEMP) && (g_ui32ActiveWarnings & WARNING_HIGH_TEMP))    
+    {
+        g_ui32ActiveWarnings &= ~WARNING_HIGH_TEMP; // turn off warning
+    }
 
-    GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_SENSOR) ? ClrRed : ClrDarkGray);
+    GrContextForegroundSet(psContext, (g_ui32ActiveWarnings & WARNING_HIGH_TEMP) ? ClrYellow : ClrDarkGray);
+    GrStringDraw(psContext, "OvTEMP", -1, 50, 220, 0);
+    
+    GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_OVERTEMP) ? ClrRed : ClrDarkGray);
+    GrStringDraw(psContext, "OvTEMP", -1, 50, 220, 0);
+
+    GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_RANGE_SENSOR) ? ClrRed : ClrDarkGray);
     GrStringDraw(psContext, "SENS", -1, 120, 220, 0);
+
+    GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_ACCEL_SENSOR) ? ClrRed : ClrDarkGray);    
+    GrStringDraw(psContext, "ACCEL", -1, 175, 220, 0);
+
+    // GrContextForegroundSet(psContext, (g_ui32ActiveFaults & FAULT_SENSOR) ? ClrRed : ClrDarkGray);
+    // GrStringDraw(psContext, "SENS", -1, 120, 220, 0);
 
     // Warnings
     GrContextForegroundSet(psContext, ClrYellow);

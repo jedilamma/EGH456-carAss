@@ -89,6 +89,9 @@ extern volatile uint32_t g_pui32ButtonPressed;
 // ====================== Motor Task ======================
 
 extern uint16_t g_ui32Speed;
+
+extern uint16_t g_ui32PowerW;
+
 extern uint32_t g_ui32Panel;
 extern tContext sContext;
 
@@ -143,7 +146,8 @@ extern PlotMode_t g_ePlotMode;
 #define FAULT_EBRAKE        (1U << 0)
 #define FAULT_OVERCURRENT   (1U << 1)
 #define FAULT_OVERTEMP      (1U << 2)
-#define FAULT_SENSOR        (1U << 3)
+#define FAULT_RANGE_SENSOR  (1U << 3)
+#define FAULT_ACCEL_SENSOR  (1U << 4)
 
 #define WARNING_LOW_VOLTAGE (1U << 0)
 #define WARNING_HIGH_TEMP   (1U << 1)

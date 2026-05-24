@@ -86,7 +86,8 @@ uint32_t g_ui32CabinHumidityRHx100 = 0;
 int32_t  g_i32HeatingThresholdCx100 = 1800;
 int32_t  g_i32CoolingThresholdCx100 = 2600;
 
-uint16_t g_ui32Speed = 40;
+uint16_t g_ui32Speed = 0;
+uint16_t g_ui32PowerW = 0;
 
 tContext sContext;
 
@@ -501,7 +502,7 @@ static void readerTask(void *pvParameters)
 
                     if (g_bSHT31Valid)
                     {
-                        g_ui32ActiveFaults &= ~FAULT_SENSOR;
+                        g_ui32ActiveFaults &= ~FAULT_OVERTEMP;
 
                         // Climate status logic for GUI display
                         if (g_i32CabinTempCx100 >= g_i32CoolingThresholdCx100)
@@ -526,7 +527,7 @@ static void readerTask(void *pvParameters)
                     else
                     {
                         // Failed SHT31 read becomes a sensor fault
-                        g_ui32ActiveFaults |= FAULT_SENSOR;
+                        g_ui32ActiveFaults |= FAULT_OVERTEMP;
                         g_bCoolingOn = false;
                         g_bHeatingOn = false;
                     }
