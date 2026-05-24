@@ -95,6 +95,7 @@ SemaphoreHandle_t xButtonSemaphore1 = NULL;
 SemaphoreHandle_t xOptSemaphore = NULL;
 SemaphoreHandle_t xPrintMutex = NULL;
 SemaphoreHandle_t xI2CMutex = NULL ;
+SemaphoreHandle_t xI2C2Mutex = NULL;
 
 /* Set up the clock and pin configurations to run this example. */
 static void prvSetupHardware( void );
@@ -118,9 +119,9 @@ int main( void )
     xOptSemaphore = xSemaphoreCreateBinary();
     xPrintMutex = xSemaphoreCreateMutex();
     xI2CMutex = xSemaphoreCreateMutex();
-
+    xI2C2Mutex = xSemaphoreCreateMutex();
     // Changed conditional to && to ensure scheduler only starts if all objects are created successfully
-    if ((xButtonSemaphore1 != NULL) && (xOptSemaphore != NULL) && (xPrintMutex != NULL) && (xI2CMutex != NULL))
+    if ((xButtonSemaphore1 != NULL) && (xOptSemaphore != NULL) && (xPrintMutex != NULL) && (xI2CMutex != NULL)&& (xI2C2Mutex != NULL))
     {
         /* Configure application specific hardware and initialize the task thread. */
         vCreateTask();

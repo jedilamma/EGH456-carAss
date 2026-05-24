@@ -528,14 +528,14 @@ void OnIMUCanvasPaint(tWidget *psWidget, tContext *psContext)
 
 void OnRangeCanvasPaint(tWidget *psWidget, tContext *psContext)
 {
-     uint32_t ui32Idx;
+    uint32_t ui32Idx;
     tRectangle sRect;
     int32_t x1, y1, x2, y2, y1f, y2f;    
     const uint32_t yMax = 2000;
     const uint32_t canvas_xMin = 30, canvas_xRange = 210;
     const uint32_t canvas_yMin = 50, canvas_yRange = 140;
-    static char buff1[4];
-    static char buff2[4];
+    //static char buff1[4];
+    //static char buff2[4];
     // Background
     GrContextForegroundSet(psContext, ClrBlack);
     sRect.i16XMin = canvas_xMin+2; 
@@ -575,8 +575,8 @@ void OnRangeCanvasPaint(tWidget *psWidget, tContext *psContext)
     // Draw plot lines
     for (ui32Idx = 0; ui32Idx < PLOT_HISTORY_SIZE - 1; ui32Idx++)
     {
-        uint32_t dataIdx1 = (g_plotOPTIndex + ui32Idx) % PLOT_HISTORY_SIZE;
-        uint32_t dataIdx2 = (g_plotOPTIndex + ui32Idx + 1) % PLOT_HISTORY_SIZE;
+        uint32_t dataIdx1 = (g_plotRNGIndex + ui32Idx) % PLOT_HISTORY_SIZE;
+        uint32_t dataIdx2 = (g_plotRNGIndex + ui32Idx + 1) % PLOT_HISTORY_SIZE;
 
         uint32_t raw1  = g_plotRNGRawHistory[dataIdx1];
         uint32_t raw2  = g_plotRNGRawHistory[dataIdx2];
@@ -596,17 +596,17 @@ void OnRangeCanvasPaint(tWidget *psWidget, tContext *psContext)
         x1 = canvas_xMin + (ui32Idx * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
         x2 = canvas_xMin + ((ui32Idx + 1) * canvas_xRange / (PLOT_HISTORY_SIZE - 1));
         
-        if (g_eOPTPlotMode == OPT_PLOT_MODE_RAW_AND_FILTERED)
+        if (g_eRNGPlotMode == RNG_PLOT_MODE_RAW_AND_FILTERED)
         {   
-            usprintf(buff2, "%4d",filt1); 
-            CanvasTextSet(&g_sLightValCanvas2, buff2);
+            // usprintf(buff2, "%4d",filt1); 
+            // CanvasTextSet(&g_sLightValCanvas2, buff2);
             //WidgetPaint((tWidget *)&g_sLightValCanvas2);
 
             GrContextForegroundSet(psContext, ClrCyan);            
             GrLineDraw(psContext, x1, y1-3, x2, y2-3);
         }
-        usprintf(buff1, "%4d",raw1); 
-        CanvasTextSet(&g_sLightValCanvas, buff1);
+        // usprintf(buff1, "%4d",raw1); 
+        // CanvasTextSet(&g_sLightValCanvas, buff1);
         //WidgetPaint((tWidget *)&g_sLightValCanvas);
 
         GrContextForegroundSet(psContext, ClrYellow);
@@ -889,7 +889,16 @@ void OnDashboardPaint(tWidget *psWidget, tContext *psContext)
     GrStringDrawCentered(psContext, speedtext, -1, 120, 75, 1);
 
     GrContextFontSet(psContext, &g_sFontCm16);
-    GrStringDraw(psContext, "Km/H", -1, 85, 75, 0);
+    GrStringDraw(psContext, "Km/H", -1, 145, 75, 0);
+
+
+    GrContextFontSet(psContext, &g_sFontCm20);
+    GrContextForegroundSet(psContext, ClrCyan);
+    usprintf(speedtext, "%d", g_ui32PowerW);
+    GrStringDrawCentered(psContext, speedtext, -1, 120, 160, 1);
+
+    GrContextFontSet(psContext, &g_sFontCm12);
+    GrStringDraw(psContext, "Watts", -1, 145, 160, 0);
 
     UpdateMotorStateCanvas();
     UpdateFaultPanel();
@@ -938,7 +947,7 @@ void OnStartButtonPress(tWidget *psWidget)
 
     SafeUARTprintf("START button pressed\r\n");
 
-    if (g_eMotorState != MOTOR_IDLE)
+    if (g_eMotorState != MOTOR_CONTROL_STATE_IDLE)
     {
         SafeUARTprintf("START ignored: motor not idle\r\n");
         return;
@@ -951,7 +960,7 @@ void OnStartButtonPress(tWidget *psWidget)
     }
 
     g_bMotorStartRequested = true;
-    SetMotorState(MOTOR_STARTING);
+    SetMotorState(MOTOR_CONTROL_STATE_STARTING);
 }
 
 // ====================== TIME UPDATING ======================
@@ -1081,27 +1090,27 @@ void UpdateMotorStateCanvas(void)
 
     switch (g_eMotorState)
     {
-        case MOTOR_RUNNING:
+        case MOTOR_CONTROL_STATE_RUNNING:
             fillColor = ClrGreen;
             motorStr = "RUNNING";
             break;
 
-        case MOTOR_ESTOP_BRAKING:
+        case MOTOR_CONTROL_STATE_ESTOP_BRAKING:
             fillColor = ClrRed;
             motorStr = "E-STOP";
             break;
 
-        case MOTOR_FAULT_LATCHED:
+        case MOTOR_CONTROL_STATE_FAULT_LATCHED:
             fillColor = ClrRed;
             motorStr = "LATCHED";
             break;
 
-        case MOTOR_STARTING:
+        case MOTOR_CONTROL_STATE_STARTING:
             fillColor = ClrOrange;
             motorStr = "STARTING";
             break;
 
-        case MOTOR_IDLE:
+        case MOTOR_CONTROL_STATE_IDLE:
         default:
             fillColor = ClrOrange;
             motorStr = "IDLE";
@@ -1113,7 +1122,7 @@ void UpdateMotorStateCanvas(void)
     CanvasFillColorSet(&g_sMotorStateCanvas, fillColor);
     
     // Optional: Make text bold/contrasting
-    if ((g_eMotorState == MOTOR_ESTOP_BRAKING) || (g_eMotorState == MOTOR_FAULT_LATCHED))
+    if ((g_eMotorState == MOTOR_CONTROL_STATE_ESTOP_BRAKING) || (g_eMotorState == MOTOR_CONTROL_STATE_FAULT_LATCHED))
         CanvasTextColorSet(&g_sMotorStateCanvas, ClrWhite);
     else
         CanvasTextColorSet(&g_sMotorStateCanvas, ClrLightSlateGray);
@@ -1127,7 +1136,7 @@ void RefreshDashboard(void)
     WidgetPaint((tWidget *)&g_sDashboard);
 }
 
-void SetMotorState(MotorState_t newState)
+void SetMotorState(MotorControlState_t newState)
 {
     if (newState == g_eMotorState)
         return;
@@ -1138,7 +1147,7 @@ void SetMotorState(MotorState_t newState)
         xEventGroupSetBits(xEventGroup, EVENT_MOTOR_STATE_CHANGE);
 
     // === START button visibility ===
-    if (g_eMotorState == MOTOR_IDLE)
+    if (g_eMotorState == MOTOR_CONTROL_STATE_IDLE)
         ShowStartButton();
     else
         HideStartButton();

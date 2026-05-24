@@ -15,15 +15,7 @@ typedef enum
     RNG_PLOT_MODE_RAW_AND_FILTERED
 } PlotMode_t;
 
-// ====================== Motor State ======================
-typedef enum
-{
-    MOTOR_IDLE = 0,
-    MOTOR_STARTING,
-    MOTOR_RUNNING,
-    MOTOR_ESTOP_BRAKING,
-    MOTOR_FAULT_LATCHED
-} MotorState_t;
+
 
 // Main Panels
 extern tCanvasWidget g_psPanels[];
@@ -107,7 +99,6 @@ extern bool g_bDisplayHold;
 
 extern bool g_faultSwitch;
 extern bool g_startDisplay;
-extern volatile bool g_bFaultAcknowledged;
 extern bool g_bFaultButtonVisible;
 
 bool g_bStartButtonVisible;
@@ -156,7 +147,7 @@ void OnDashButtonPress(tWidget *psWidget);
 void OnFaultPanelPaint(tWidget *psWidget, tContext *psContext);
 void UpdateFaultPanel(void);
 void UpdateMotorStateCanvas(void);
-void SetMotorState(MotorState_t newState);
+void SetMotorState(MotorControlState_t newState);
 void OnDashboardSliderChange(tWidget *psWidget, int32_t i32Value);
 void UpdateTime(void);
 void UpdateTemp(tContext *psContext);

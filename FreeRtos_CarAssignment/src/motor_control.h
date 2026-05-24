@@ -30,6 +30,7 @@ typedef enum
     MOTOR_CONTROL_STATE_FAULT_LATCHED
 } MotorControlState_t;
 
+
 typedef enum
 {
     MOTOR_CONTROL_FAULT_NONE = 0,

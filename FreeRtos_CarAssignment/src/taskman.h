@@ -38,6 +38,7 @@
 #include "drivers/opt3001.h"
 #include "drivers/bmi160.h"
 #include "drivers/i2cOptDriver.h"
+#include "drivers/vl53l0x.h"
 
 #include "inc/hw_nvic.h"
 #include "inc/hw_sysctl.h"
@@ -63,7 +64,8 @@
 #include "driverlib/timer.h" 
 #include "widgets.h"
 #include "system_utils.h"
-#include "drivers/temp_humidity.h" 
+#include "drivers/temp_humidity.h"  // Adds the SHT31 temperature/humidity wrapper
+#include "motor_control.h"
 
 // ====================== Message Object ======================
 typedef struct __attribute__((aligned(4))) MsgObj
@@ -115,7 +117,7 @@ extern int32_t  g_i32CoolingThresholdCx100;
 #define EVENT_SENSOR_DATA_READY (1U << 7)
 
 extern QueueHandle_t xQueue;
-
+extern SemaphoreHandle_t xI2C2Mutex;
 extern SemaphoreHandle_t xI2CMutex;
 extern SemaphoreHandle_t xButtonSemaphore1;
 extern SemaphoreHandle_t xPrintMutex;
@@ -138,7 +140,7 @@ extern uint32_t g_plotRNGFiltHistory[PLOT_HISTORY_SIZE];
 extern uint32_t g_plotRNGIndex;
 
 // Motor & Plot Mode
-extern volatile MotorState_t g_eMotorState;
+extern volatile MotorControlState_t g_eMotorState;
 extern PlotMode_t g_eOPTPlotMode;
 extern PlotMode_t g_eIMUPlotMode;
 extern PlotMode_t g_eRNGPlotMode;
@@ -150,7 +152,7 @@ extern PlotMode_t g_ePlotMode;
 #define FAULT_OVERTEMP      (1U << 2)
 #define FAULT_RANGE_SENSOR  (1U << 3)
 #define FAULT_ACCEL_SENSOR  (1U << 4)
-
+#define FAULT_MOTOR_SENSOR  (1u << 5)
 #define WARNING_LOW_VOLTAGE (1U << 0)
 #define WARNING_HIGH_TEMP   (1U << 1)
 
@@ -160,7 +162,6 @@ extern uint32_t g_ui32ActiveSafety;
 
 // Event Bits
 
-#define EVENT_ALL_BITS              (0xFFU)
 #define EVENT_LUXHIGH_THRESHOLD     (1U << 0)
 #define EVENT_LUXLOW_THRESHOLD      (1U << 1)
 #define EVENT_SENSOR_MISSED         (1U << 2)
@@ -172,7 +173,8 @@ extern uint32_t g_ui32ActiveSafety;
 #define EVENT_HIGH_ACCEL_LIMIT      (1U << 8)
 #define EVENT_FAULT_ESTOP           (1U << 9)
 #define EVENT_FAULT_ACK             (1U << 10)
-#define EVENT_ALL_BITS              (0x3FFU)
+
+#define EVENT_ALL_BITS              (0x3FFU)  
 
 // ====================== QUEUE + TASK PRIORITIES ======================
 #define mainQUEUE_LENGTH                    ( 30U )
@@ -205,5 +207,7 @@ extern void UpdateTime(void);
 
 extern tCanvasWidget g_sTimeCanvas;
 extern tCanvasWidget g_sMotorStateCanvas;
+
+
 
 #endif // OPTFTOS_TASKMAN_H

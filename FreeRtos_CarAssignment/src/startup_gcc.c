@@ -54,8 +54,7 @@ extern void xPortSysTickHandler(void);
 extern void TouchScreenIntHandler(void);
 extern void xTimerHandler(void);
 extern void xButtonsHandler(void);
-extern void I2C0IntHandler(void);
-extern void xOPT_INT_Handler(void);
+extern void I2C2IntHandler(void);
 // extern void xBMI160DRDYHandler(void); // Temporarily disabled
 //*****************************************************************************
 //
@@ -105,7 +104,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // UART0 Rx and Tx
     IntDefaultHandler,                      // UART1 Rx and Tx
     IntDefaultHandler,                      // SSI0 Rx and Tx
-    I2C0IntHandler,                         // I2C0 Master and Slave
+    IntDefaultHandler,                         // I2C0 Master and Slave
     IntDefaultHandler,                      // PWM Fault
     IntDefaultHandler,                      // PWM Generator 0
     IntDefaultHandler,                      // PWM Generator 1
@@ -158,7 +157,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // UART5 Rx and Tx
     IntDefaultHandler,                      // UART6 Rx and Tx
     IntDefaultHandler,                      // UART7 Rx and Tx
-    IntDefaultHandler,                      // I2C2 Master and Slave
+    I2C2IntHandler,                      // I2C2 Master and Slave
     IntDefaultHandler,                      // I2C3 Master and Slave
     IntDefaultHandler,                      // Timer 4 subtimer A
     IntDefaultHandler,                      // Timer 4 subtimer B
@@ -235,6 +234,7 @@ extern uint32_t _ebss;
 //
 //*****************************************************************************
 void
+
 ResetISR(void){
     uint32_t *pui32Src, *pui32Dest;
 
