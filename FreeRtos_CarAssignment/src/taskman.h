@@ -6,6 +6,8 @@
 #define SENSOR_ID_IMU 2U // Accelerometer/Magnetometer (BMI160)
 #define SENSOR_ID_SHT31 3U // Temperature/Humidity Sensor (SHT31)
 
+#include "motor_control.h"
+
 // Standard includes
 #include <stdio.h>
 #include <stdint.h>

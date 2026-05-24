@@ -27,7 +27,10 @@
 #include "inc/hw_nvic.h"
 #include "inc/hw_types.h"
 #include "driverlib/interrupt.h"     
-#include "utils/uartstdio.h"   
+#include "utils/uartstdio.h" 
+#include "inc/hw_memmap.h"
+#include "driverlib/sysctl.h"
+#include "driverlib/gpio.h"  
 
 
 //*****************************************************************************
@@ -54,8 +57,6 @@ extern void xButtonsHandler(void);
 extern void I2C0IntHandler(void);
 extern void xOPT_INT_Handler(void);
 // extern void xBMI160DRDYHandler(void); // Temporarily disabled
-extern void xHallPortHHandler(void);
-extern void xHallPortMHandler(void);
 //*****************************************************************************
 //
 // The entry point for the application.
@@ -128,7 +129,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // FLASH Control
     IntDefaultHandler,                      // GPIO Port F
     IntDefaultHandler,                      // GPIO Port G
-    xHallPortHHandler,                      // GPIO Port H
+    IntDefaultHandler,                      // GPIO Port H
     IntDefaultHandler,                      // UART2 Rx and Tx
     IntDefaultHandler,                      // SSI1 Rx and Tx
     IntDefaultHandler,                      // Timer 3 subtimer A
@@ -168,7 +169,7 @@ void (* const g_pfnVectors[])(void) =
     0,                                      // Reserved
     IntDefaultHandler,                      // I2C4 Master and Slave
     IntDefaultHandler,                      // I2C5 Master and Slave
-    xHallPortMHandler,                      // GPIO Port M
+    IntDefaultHandler,                      // GPIO Port M
     IntDefaultHandler,                      // GPIO Port N
     0,                                      // Reserved
     IntDefaultHandler,                      // Tamper
