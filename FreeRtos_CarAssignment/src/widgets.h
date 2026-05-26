@@ -74,15 +74,15 @@ extern volatile uint8_t  g_ui8Day, g_ui8Month;
 extern volatile uint16_t g_ui16Year;
 extern volatile int16_t  g_i16MotorValue;
 extern uint16_t g_ui32RCVSpeed; // this should only report from the sensor to the gui
-extern volatile uint32_t g_ui32DesiredSpeedRPM; // sets the target speed we want 
+extern volatile int g_ui32DesiredSpeedRPM; // sets the target speed we want 
 extern volatile bool g_bMotorStartRequested;
 extern volatile bool g_bMotorStopRequested;
 extern volatile bool g_bMotorFaultAckRequested;
 
-extern volatile uint32_t g_ui32MotorReferenceRPM;
-extern volatile uint32_t g_ui32MotorActualRPM;
-extern volatile uint32_t g_ui32MotorPWMPercent;
-extern volatile uint32_t g_ui32MotorPowerW;
+extern volatile int g_ui32MotorReferenceRPM;
+extern volatile int g_ui32MotorActualRPM;
+extern volatile int g_ui32MotorPWMPercent;
+extern volatile int g_ui32MotorPowerW;
 // Bottom Navigation
 extern char *g_pcPanei32Names[];
 
@@ -123,7 +123,7 @@ void OnOPTPlotModeChange(tWidget *psWidget, uint32_t bSelected);
 void OnIMUPlotModeChange(tWidget *psWidget, uint32_t bSelected);
 void OnOPTPlotModeChange2(tWidget *psWidget, uint32_t bSelected);
 void OnIMUPlotModeChange2(tWidget *psWidget, uint32_t bSelected);
-
+void ClearAllFaults(void);
 void OnPlotModeChange3(tWidget *psWidget, uint32_t bSelected);
 void OnPlotModeChange4(tWidget *psWidget, uint32_t bSelected);
 void OnPlotModeChange5(tWidget *psWidget, uint32_t bSelected);
@@ -163,7 +163,7 @@ tCanvasWidget g_sFaultButtonCanvas;
 extern tCanvasWidget g_sFaultPanel;
 extern tSliderWidget g_sDashboardSlider;
 extern tCanvasWidget g_sTimeCanvas;
-extern tCanvasWidget g_sTempCanvas;
+//extern tCanvasWidget g_sTempCanvas;
 extern tCanvasWidget g_sLightValCanvas;
 extern tCanvasWidget g_sLightValCanvas2;
 extern tCanvasWidget g_sAccelValueCanvas;

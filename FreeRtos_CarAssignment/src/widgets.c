@@ -227,11 +227,11 @@ Canvas(g_sDashboard, g_psPanels, &g_sDashboardSlider, &g_sFaultPanel,
        320, 240, CANVAS_STYLE_APP_DRAWN, 0, 0, 0, 0, 0, 0, OnDashboardPaint);
 
 // ====================== TIME CANVAS ON DASHBOARD ======================
-tCanvasWidget g_sTempCanvas = CanvasStruct( &g_sDashboard, 0, 0,
-                                            &g_sKentec320x240x16_SSD2119,
-                                            210, 8, 60, 28,                                      // x, y, w, h
-                                            CANVAS_STYLE_FILL | CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
-                                            ClrBlack, 0, ClrWhite, &g_sFontCm16, "--,-- C", 0, 0);
+// tCanvasWidget g_sTempCanvas = CanvasStruct( &g_sDashboard, 0, 0,
+//                                             &g_sKentec320x240x16_SSD2119,
+//                                             210, 8, 60, 28,                                      // x, y, w, h
+//                                             CANVAS_STYLE_FILL | CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
+//                                             ClrBlack, 0, ClrWhite, &g_sFontCm16, "", 0, 0);
 
 // ====================== TIME CANVAS ON DASHBOARD ======================
 tCanvasWidget g_sTimeCanvas = CanvasStruct( &g_sDashboard, 0, 0,
@@ -276,7 +276,7 @@ tSliderWidget g_sDashboardSlider = SliderStruct(&g_sDashboard,
                                                 0,                              // No children
                                                 &g_sKentec320x240x16_SSD2119,
                                                 10, 50, 25, 140,               // x, y, width, height  ← adjust as needed
-                                                0, 3000, 0,                    // min, max, initial value
+                                                0, 2000, 0,                    // min, max, initial value
                                                 (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
                                                 SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT | SL_STYLE_VERTICAL),
                                                 ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
@@ -617,42 +617,68 @@ void OnRangeCanvasPaint(tWidget *psWidget, tContext *psContext)
 void OnCanvasPaint(tWidget *psWidget, tContext *psContext)
 {   
     
-    // SHT31 values are placed below existing controls
-    // prevents humidity text overlapping with Min Lux Threshold
-    // if (g_bSHT31Valid)
-    // {  
-    //     char buf[24];
-    //     //UpdateTemp(psContext);
-    //     GrContextForegroundSet(psContext, ClrWhite);
+    tRectangle sRect;
+    char buf[40];
 
-    //     FormatSignedX100(buf, "Cabin Temp: ", g_i32CabinTempCx100, "C");
-    //     GrStringDraw(psContext, buf, -1, 40, 180, 0);
+    // Clear the canvas area
+    GrContextForegroundSet(psContext, ClrBlack);
+    sRect.i16XMin = 30;
+    sRect.i16YMin = 50;
+    sRect.i16XMax = 230;
+    sRect.i16YMax = 190;
+    GrRectFill(psContext, &sRect);
 
+    // Draw border
+    GrContextForegroundSet(psContext, ClrWhite);
+    GrRectDraw(psContext, &sRect);
 
-    //     FormatUnsignedX100(buf, "Humidity: ", g_ui32CabinHumidityRHx100, "%RH");
-    //     GrStringDraw(psContext, buf, -1, 40, 200, 0);
+    GrContextFontSet(psContext, &g_sFontCm16);
 
-    //     if (g_bCoolingOn)
-    //     {
-    //         GrContextForegroundSet(psContext, ClrCyan);
-    //         GrStringDraw(psContext, "Climate: Cooling", -1, 40, 210, 0);
-    //     }
-    //     else if (g_bHeatingOn)
-    //     {
-    //         GrContextForegroundSet(psContext, ClrOrange);
-    //         GrStringDraw(psContext, "Climate: Heating", -1, 40, 210, 0);
-    //     }
-    //     else
-    //     {
-    //         GrContextForegroundSet(psContext, ClrGreen);
-    //         GrStringDraw(psContext, "Climate: OK", -1, 40, 210, 0);
-    //     }
-    // }
-    // else
-    // {
-    //     GrContextForegroundSet(psContext, ClrRed);
-    //     GrStringDraw(psContext, "Climate: No Data", -1, 40, 210, 0);
-    // }
+    // === Temperature ===
+    GrContextForegroundSet(psContext, ClrCyan);
+    int32_t temp = g_i32CabinTempCx100;
+    usprintf(buf, "Cabin Temp: %d.%02d C",
+            (int)(temp / 100),
+            (int)(abs(temp) % 100));
+    GrStringDraw(psContext, buf, -1, 40, 65, 0);
+
+    // === Humidity ===
+    GrContextForegroundSet(psContext, ClrYellow);
+    usprintf(buf, "Humidity: %u.%02u %%",
+            (unsigned)(g_ui32CabinHumidityRHx100 / 100),
+            (unsigned)(g_ui32CabinHumidityRHx100 % 100));
+    GrStringDraw(psContext, buf, -1, 40, 90, 0);
+
+    // === Climate Status ===
+    GrContextForegroundSet(psContext, ClrWhite);
+    if (g_bHeatingOn)
+    {
+        GrContextForegroundSet(psContext, ClrOrange);
+        GrStringDraw(psContext, "Status: HEATING", -1, 40, 120, 0);
+    }
+    else if (g_bCoolingOn)
+    {
+        GrContextForegroundSet(psContext, ClrCyan);
+        GrStringDraw(psContext, "Status: COOLING", -1, 40, 120, 0);
+    }
+    else
+    {
+        GrContextForegroundSet(psContext, ClrGreen);
+        GrStringDraw(psContext, "Status: Normal", -1, 40, 120, 0);
+    }
+    
+    // Optional: show thresholds
+    GrContextFontSet(psContext, &g_sFontCm12);
+    GrContextForegroundSet(psContext, ClrLightGrey);
+    usprintf(buf, "Heat < %d.%02d C", 
+             (int)(g_i32HeatingThresholdCx100 / 100),
+             (int)(abs(g_i32HeatingThresholdCx100) % 100));
+    GrStringDraw(psContext, buf, -1, 40, 150, 0);
+
+    usprintf(buf, "Cool > %d.%02d C", 
+             (int)(g_i32CoolingThresholdCx100 / 100),
+             (int)(abs(g_i32CoolingThresholdCx100) % 100));
+    GrStringDraw(psContext, buf, -1, 40, 168, 0);
 }
 
 // void OnDashCanvasPaint(tWidget *psWidget, tContext *psContext)
@@ -905,37 +931,6 @@ void UpdateTime(void)
 }
 
 
-void UpdateTemp(void)
-{
-    char temptext[24];
-    if (g_bSHT31Valid)    
-    {             
-        //usprintf(temptext, "%3d C,%3d %%",(int)(g_i32CabinTempCx100/100),(int)g_ui32CabinHumidityRHx100/100);  
-        usprintf(temptext, "%3d C",(int)(g_i32CabinTempCx100/100)); 
-        CanvasTextSet(&g_sTempCanvas, temptext);
-        WidgetPaint((tWidget *)&g_sTempCanvas);
-    }   
-    // else
-    // {
-    //     //usprintf(temptext, "--.-- C");
-    // }
-
-    //GrContextFontSet(psContext, &g_sFontCm20);
-
-    // // Set color based on state
-    // if (!g_bSHT31Valid)
-    //     GrContextForegroundSet(psContext, ClrRed);
-    // else if (g_bCoolingOn)
-    //     GrContextForegroundSet(psContext, ClrCyan);
-    // else if (g_bHeatingOn)
-    //     GrContextForegroundSet(psContext, ClrOrange);
-    // else
-    //     GrContextForegroundSet(psContext, ClrWhite);
-    
-
-}
-
-
 void OnFaultPanelPaint(tWidget *psWidget, tContext *psContext)
 {
     //tRectangle sRect;    
@@ -1035,7 +1030,7 @@ void UpdateMotorStateCanvas(void)
     if ((g_eMotorState == MOTOR_ESTOP_BRAKING) || (g_eMotorState == MOTOR_FAULT_LATCHED))
         CanvasTextColorSet(&g_sMotorStateCanvas, ClrWhite);
     else
-        CanvasTextColorSet(&g_sMotorStateCanvas, ClrLightSlateGray);
+        CanvasTextColorSet(&g_sMotorStateCanvas, ClrWhite);
 
     WidgetPaint((tWidget *)&g_sMotorStateCanvas);
 }
@@ -1084,12 +1079,12 @@ void HideStartButton(void)
 
 void OnDashboardSliderChange(tWidget *psWidget, int32_t i32Value)
 {
-    static char pcSliderText[8];
+    //static char pcSliderText[8];
 
     if (psWidget == (tWidget *)&g_sDashboardSlider)
     {
-        usprintf(pcSliderText, "%3d", (int)i32Value);
-        SliderTextSet(&g_sDashboardSlider, pcSliderText);
+        // usprintf(pcSliderText, "%3d", (int)i32Value);
+        // SliderTextSet(&g_sDashboardSlider, pcSliderText);
 
         // Update GUI speed display
         //g_ui32Speed = (uint32_t)i32Value;
@@ -1248,10 +1243,14 @@ void OnClearFaultButtonPress(tWidget *psWidget)
     g_bFaultAcknowledged = true;
     g_bMotorFaultAckRequested = true;
 
-    if (xEventGroup)
-    {
-        xEventGroupSetBits(xEventGroup, EVENT_FAULT_ACK);
-    }
+    //clear all faults
+    ClearAllFaults();
+    UpdateFaultPanel();
+    // if (xEventGroup)
+    // {
+    //     xEventGroupSetBits(xEventGroup, EVENT_FAULT_ACK);
+    // }
+    WidgetPaint((tWidget *)&g_sFaultButtonCanvas);
 }
 
 
@@ -1287,20 +1286,7 @@ void DrawDashboardGraphAndValues(void)
     // GrContextForegroundSet(ctx, ClrWhite);
     // GrRectDraw(ctx, &(tRectangle){45, 70, 200, 170});
 
-    // === RPM Value ===
-    GrContextFontSet(ctx, &g_sFontCm20);
-    GrContextForegroundSet(ctx, ClrCyan);
-    char buf[32];
-    usprintf(buf, "RPM: %d", g_ui32RCVSpeed);
-    GrStringDraw(ctx, buf, -1, 45, 40, 1);
-
-    // === Watts Value ===
-    GrContextFontSet(ctx, &g_sFontCm16);
-    GrContextForegroundSet(ctx, ClrYellow);
-    usprintf(buf, "Power: %d W", g_ui32MotorPowerW);
-    GrStringDraw(ctx, buf, -1, 45, 65, 1);
-
-    // === Moving RPM Graph ===
+        // === Moving RPM Graph ===
     GrContextFontSet(ctx, &g_sFontCm12);
     GrContextForegroundSet(ctx, ClrWhite);
     GrStringDraw(ctx, "RPM History", -1, 45, 85, 0);
@@ -1368,4 +1354,29 @@ void UpdateDashboardSliderText(uint32_t value)
     usprintf(pcSliderText, "%3d", (int)value);
     SliderTextSet(&g_sDashboardSlider, pcSliderText);
     if (g_ui32Panel == 0) WidgetPaint((tWidget *)&g_sDashboard);  
+}
+
+
+void ClearAllFaults(void)
+{
+    // Clear all fault bits
+    g_ui32ActiveFaults = 0;
+
+    // Also clear warnings if you want
+    g_ui32ActiveWarnings = 0;
+
+    // Clear motor module fault
+    Motor_ClearFault();
+
+    // Reset fault acknowledge flags
+    g_bFaultAcknowledged = false;
+    g_bMotorFaultAckRequested = false;
+
+    // Optional: Force motor back to IDLE if it was latched
+    if (g_eMotorState == MOTOR_FAULT_LATCHED || g_eMotorState == MOTOR_ESTOP_BRAKING)
+    {
+        SetMotorState(MOTOR_IDLE);
+    }
+
+    SafeUARTprintf("All faults cleared\r\n");
 }

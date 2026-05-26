@@ -38,7 +38,7 @@ extern int32_t FloatToX100(float value);
 #define MOTOR_MAX_DUTY_PERCENT             80.0f
 #define MOTOR_STOPPED_RPM                  2.0f
 
-#define MOTOR_DEFAULT_HALL_EDGES_PER_REV   42.0f
+#define MOTOR_DEFAULT_HALL_EDGES_PER_REV   6.0f
 
 #define MOTOR_SUPPLY_VOLTAGE               24.0f
 #define MOTOR_CURRENT_AMP_GAIN             10.0f
@@ -95,6 +95,16 @@ static float g_hallEdgesPerRev = MOTOR_DEFAULT_HALL_EDGES_PER_REV;
 static uint32_t g_lastHallEdgeCount = 0U;
 static uint32_t g_speedSampleElapsedMs = 0U;
 
+/* === Open-Loop Startup State === */
+static bool g_inOpenLoopStartup = false;
+static uint8_t g_startupStepIndex = 0;
+static uint32_t g_startupElapsedMs = 0;
+
+// 6-step commutation sequence (same order as valid Hall states)
+static const uint8_t startupSequence[6] = {
+    HALL_STATE_011, HALL_STATE_010, HALL_STATE_110,
+    HALL_STATE_100, HALL_STATE_101, HALL_STATE_001
+};
 /* ============================================================
  * Internal prototypes
  * ============================================================ */
@@ -332,27 +342,40 @@ static void prvUpdateSpeedEstimate(uint32_t elapsedMs)
 {
     static uint32_t lastEdgeCount = 0;
     uint32_t currentEdges = prvGetHallEdgeCount();
-    uint32_t delta = currentEdges - lastEdgeCount;
+
+    int32_t delta = (int32_t)(currentEdges - lastEdgeCount);
+    if (delta < 0) delta = 0;
     lastEdgeCount = currentEdges;
 
-    const float sampleTimeSec = 0.01f;   // fixed 10ms window
+    const float sampleTimeSec = 0.01f;
 
     float rpm = 0.0f;
-    //float g_hallEdgesPerRev = 45.0f;
-    if (delta > 0 && g_hallEdgesPerRev > 0.0f)
+
+    // Only calculate if we have real movement and commutation is active
+    if (delta > 0 && g_hallEdgesPerRev > 0.0f && g_commutationEnabled)
     {
         rpm = (delta * 60.0f) / (g_hallEdgesPerRev * sampleTimeSec);
     }
 
-    // Strong clamp + better filtering
-    if (rpm > 3500.0f) rpm = 3500.0f;
+    const float SPEED_CALIBRATION = 0.18f;     // ← Start with 0.65 and adjust
+    rpm = rpm * SPEED_CALIBRATION;
+
+    // Hard sanity clamp
+    if (rpm > 4000.0f) rpm = 4000.0f;
     if (rpm < 0.0f)    rpm = 0.0f;
 
-    // Smoother filter
-    g_status.actual_speed_rpm = (0.85f * g_status.actual_speed_rpm) + (0.15f * rpm);
+    // Normal filtering (keep this stable)
+    g_status.actual_speed_rpm = (0.80f * g_status.actual_speed_rpm) + (0.20f * rpm);
 
-    if (delta == 0 && g_status.actual_speed_rpm < 15.0f)
-        g_status.actual_speed_rpm = 0.0f;
+    // === Only force to zero when we are clearly stopping ===
+    // This avoids making normal low-speed running noisy
+    if (g_status.pwm_duty_percent < 6.0f && !g_commutationEnabled)
+    {
+        if (g_status.actual_speed_rpm < 50.0f || delta == 0)
+        {
+            g_status.actual_speed_rpm = 0.0f;
+        }
+    }
 }
 
 static void prvApplyDutyPercent(float dutyPercent)
@@ -360,20 +383,21 @@ static void prvApplyDutyPercent(float dutyPercent)
     dutyPercent = prvClampFloat(dutyPercent, 0.0f, MOTOR_MAX_DUTY_PERCENT);
     g_status.pwm_duty_percent = dutyPercent;
 
-    // === Simple Power Estimate (while already locked) ===
     if (dutyPercent > 0.0f)
     {
-        // 5.5f = estimated amps at 100% duty. Tune this value.
-        g_status.motor_power_w = dutyPercent * 0.8f;     // Simple & reliable
+        g_status.motor_power_w = dutyPercent * 0.8f;
     }
     else
     {
         g_status.motor_power_w = 0.0f;
+        g_status.actual_speed_rpm = 0.0f;     // ← Force clear speed immediately
     }
 
     if (dutyPercent <= 0.0f)
     {
         stopMotor(false);
+        //lastEdgeCount = prvGetHallEdgeCount();   // ← Add this line
+        g_status.actual_speed_rpm = 0.0f;
         return;
     }
 
@@ -483,7 +507,7 @@ static void prvHallISR(uint32_t gpioBase, uint8_t hallPin)
             {
                 g_lastValidHallState = hallState;
                 g_hallEdgeCount++;
-                if (g_commutationEnabled)
+                if (g_commutationEnabled && g_status.pwm_duty_percent > 5.0f && !g_inOpenLoopStartup)
                     prvCommandCommutationState(hallState);
             }
             else if (g_commutationEnabled)
@@ -577,4 +601,43 @@ void Motor_EnableCommutation(void)
 void Motor_DisableCommutation(void)
 {
     g_commutationEnabled = false;
+}
+
+// ==================== OPEN-LOOP STARTUP ====================
+
+void Motor_StartOpenLoopStartup(void)
+{
+    if (!g_motorInitialised) return;
+
+    g_inOpenLoopStartup = true;
+    g_startupStepIndex = 0;
+    g_startupElapsedMs = 0;
+    g_commutationEnabled = true;
+
+    // Start by forcing first sector
+    prvCommandCommutationState(startupSequence[0]);
+}
+
+void Motor_StopOpenLoopStartup(void)
+{
+    g_inOpenLoopStartup = false;
+}
+
+bool Motor_IsInOpenLoopStartup(void)
+{
+    return g_inOpenLoopStartup;
+}
+
+void Motor_ForceCommutationStep(void)
+{
+    if (!g_inOpenLoopStartup || !g_motorInitialised) return;
+
+    g_startupStepIndex = (g_startupStepIndex + 1) % 6;
+    uint8_t state = startupSequence[g_startupStepIndex];
+
+    bool hallA = (state & HALL_LOGICAL_A_BIT) != 0U;
+    bool hallB = (state & HALL_LOGICAL_B_BIT) != 0U;
+    bool hallC = (state & HALL_LOGICAL_C_BIT) != 0U;
+
+    updateMotor(hallA, hallB, hallC);
 }

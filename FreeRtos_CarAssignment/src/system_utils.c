@@ -12,7 +12,7 @@ static uint32_t RangeBuffer[AVG_WINDOW] = {0};
 static uint32_t IMUBuffer[AVG_WINDOW] = {0};
 static uint32_t HALBuffer[AVG_WINDOW] = {0};
 static uint32_t CURRBuffer[AVG_WINDOW] = {0};
-
+static uint32_t TempBuffer[AVG_WINDOW] = {0};
 static uint32_t RSum = 0;
 static uint8_t RIndex = 0;
 static uint8_t RCount = 0;
@@ -30,6 +30,10 @@ static uint8_t HCount = 0;
 static uint32_t CSum = 0;
 static uint8_t CIndex = 0;
 static uint8_t CCount = 0;
+
+static uint32_t TSum = 0;
+static uint8_t TIndex = 0;
+static uint8_t TCount = 0;
 
 void EnableHighResTimer(void)
 {
@@ -197,7 +201,7 @@ uint32_t FloatToUX100(float value)
 }
 
 // ====================== OPT3001 Task ======================
-uint32_t UpdateAverage(uint32_t Value,uint8_t SensorState)
+int32_t UpdateAverage(int32_t Value,uint8_t SensorState)
 {
     // Only divide by the number of valid samples during startup
     switch(SensorState)
@@ -309,6 +313,27 @@ uint32_t UpdateAverage(uint32_t Value,uint8_t SensorState)
                 CIndex = 0;
             }
             return CSum / CCount;
+        break;
+        case SENSOR_ID_SHT31: // current
+            if (TCount < AVG_WINDOW)
+            {
+                TempBuffer[TIndex] = Value;
+                TSum += Value;
+                TCount++;
+            }
+            else
+            {
+                TSum -= TempBuffer[TIndex];
+                TempBuffer[TIndex] = Value;
+                TSum += Value;
+            }
+
+            TIndex++;
+            if (TIndex >= AVG_WINDOW)
+            {
+                TIndex = 0;
+            }
+            return TSum / TCount;
         break;
     }
     return 0;

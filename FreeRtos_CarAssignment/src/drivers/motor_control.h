@@ -92,6 +92,12 @@ void Motor_HallPortHISR(void);
 void Motor_HallPortMISR(void);
 void Motor_HallPortNISR(void);
 
+// === Open-Loop Startup Support ===
+void Motor_StartOpenLoopStartup(void);
+void Motor_StopOpenLoopStartup(void);
+void Motor_ForceCommutationStep(void);
+bool Motor_IsInOpenLoopStartup(void);
+
 uint8_t Motor_GetCurrentHallState(void);
 
 #ifdef __cplusplus
