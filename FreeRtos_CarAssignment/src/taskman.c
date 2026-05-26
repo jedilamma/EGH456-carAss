@@ -13,6 +13,7 @@ static void prvMotorTask(void *pvParameters);
 static void prvIMUTask(void *pvParameters);
 static void prvSHT31Task(void *pvParameters); // SHT31 task prototype
 static void prvVL53Task(void *pvParameters);
+static void prvHallTask(void *pvParameters);
 
 static void prvConfigureLED(void);
 static void prvConfigureButton(void);
@@ -30,19 +31,23 @@ uint32_t g_ui32ActiveSafety = 0;
 uint32_t g_ui32FilteredBodyAccel     = 420;   // live filtered acceleration
 uint32_t g_ui32CrashThreshold        = 2500;   // configurable crash limit
 uint32_t g_ui32CurrentDistance       = 180;   // live distance to object (cm)
-uint32_t g_ui32DetRangeVal           = 90;    // configurable safe distance
+uint32_t g_ui32DetRangeVal           = 60;    // configurable safe distance
 uint32_t g_ui32LuxMinThreshold       = 10;    // low lux trigger
 uint32_t g_ui32LuxMaxThreshold       = 950;   // high lux trigger
 uint32_t g_ui32EngineTemp            = 55;    // simulated engine temp for heating/cooling
 uint32_t g_ui32HeatingThreshold      = 100;
 uint32_t g_ui32CoolingThreshold      = 10;
 uint32_t g_ui32AccelMaxVal           = 10;
-
+uint32_t g_ui32CrashLevels           = 10;
+uint32_t g_ui32MinSafeDistance       = 60;
+uint32_t Hfilt_avg10 = 0;
 // Already declared in taskman.h as extern
 volatile uint32_t g_ui32TimeStamp = 0;
 volatile uint8_t  uiIndex = 0;
 volatile uint8_t  uiIndex_2 = 0;
 volatile uint32_t g_pui32ButtonPressed = 0;
+
+volatile MotorState_t g_eMotorState = MOTOR_IDLE;
 
 uint32_t g_plotOPTRawHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotOPTFiltHistory[PLOT_HISTORY_SIZE] = {0};
@@ -58,12 +63,15 @@ uint32_t g_plotRNGRawHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotRNGFiltHistory[PLOT_HISTORY_SIZE] = {0};
 uint32_t g_plotRNGIndex = 0;
 
+// Dashboard speed history (for small graph)
+uint32_t g_plotDashSpeedHistory[PLOT_LARGE_HISTORY_SIZE] = {0};
+uint32_t g_plotDashAvgHistory[PLOT_LARGE_HISTORY_SIZE] = {0};
+uint32_t g_plotDashIndex = 0;
+
 PlotMode_t g_eOPTPlotMode = OPT_PLOT_MODE_RAW_AND_FILTERED;
 PlotMode_t g_eIMUPlotMode = IMU_PLOT_MODE_RAW_AND_FILTERED; 
 PlotMode_t g_eRNGPlotMode = RNG_PLOT_MODE_RAW_AND_FILTERED;
 PlotMode_t g_ePlotMode = RNG_PLOT_MODE_RAW_AND_FILTERED;
-
-volatile MotorControlState_t g_eMotorState = MOTOR_CONTROL_STATE_IDLE;
 
 // Moving average state for OPT3001 - Originally average divided by 10 even before 10 samples existed, 
 // leading to inaccurate initial readings
@@ -90,7 +98,7 @@ int32_t  g_i32HeatingThresholdCx100 = 1800;
 int32_t  g_i32CoolingThresholdCx100 = 2600;
 
 uint16_t g_ui32PowerW = 0;
-uint16_t g_ui32Speed = 0; // Gui-facing speed variable (RPM)
+uint16_t g_ui32RCVSpeed = 0; // Gui-facing speed variable (RPM)
 
 // Motor Runtime Globals
 volatile uint32_t g_ui32DesiredSpeedRPM = 0;
@@ -122,14 +130,14 @@ void vCreateTask(void)
     xTaskCreate(readerTask,         "Reader", configMINIMAL_STACK_SIZE * 10, NULL, mainQUEUE_RECEIVE_TASK_PRIORITY , NULL);
 
     xTaskCreate(prvLEDTasksw1,      "LED",     configMINIMAL_STACK_SIZE * 2, NULL, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(prvIMUTask,         "IMU",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL); 
-    
+    xTaskCreate(prvIMUTask,         "IMU",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL);     
     xTaskCreate(prvOptTask,         "OPT",     configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL);    
     xTaskCreate(prvDisplayTask,     "DISPLAY", configMINIMAL_STACK_SIZE * 12, NULL, tskIDLE_PRIORITY + 3, NULL);  // biggest
- // xTaskCreate(prvFaultSimulatorTask, "FAULTSIM", configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
-    xTaskCreate(prvMotorTask,       "MOTOR",    configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 2, NULL);
-    //xTaskCreate(prvSHT31Task,       "SHT31",    configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL); // Create the SHT31 sampling/filtering task 
+    //xTaskCreate(prvFaultSimulatorTask, "FAULTSIM", configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(prvMotorTask,       "MOTOR",    configMINIMAL_STACK_SIZE * 6, NULL, tskIDLE_PRIORITY + 3, NULL);
+    xTaskCreate(prvSHT31Task,       "SHT31",    configMINIMAL_STACK_SIZE * 4, NULL, tskIDLE_PRIORITY + 2, NULL); // Create the SHT31 sampling/filtering task 
     xTaskCreate(prvVL53Task,        "VL53",     configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(prvHallTask,        "HALL", configMINIMAL_STACK_SIZE * 8, NULL, tskIDLE_PRIORITY + 3, NULL);
 
 
     SafeUARTprintf("All tasks created successfully!\r\n");
@@ -187,7 +195,55 @@ static void prvVL53Task(void *pvParameters)
         }
 
         xQueueSend(xQueue, &msg, 0);
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(120));
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100));
+    }
+}
+
+// ====================== HALL SENSOR TASK ======================
+static void prvHallTask(void *pvParameters)
+{
+    (void)pvParameters;
+
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+
+    SafeUARTprintf("=== Hall Sensor Task Started ===\r\n");
+
+    for (;;)
+    {
+        if (g_eMotorState == MOTOR_RUNNING || g_eMotorState == MOTOR_STARTING || g_eMotorState == MOTOR_ESTOP_BRAKING)
+        {
+            if (Motor_IsReady())
+            {
+                MotorStatus_t mstatus = Motor_GetStatus();
+
+                struct MsgObj msg = {0};           // Declare inside the if
+
+                msg.id    = SENSOR_ID_HALL;
+                msg.flag  = 0;
+                msg.val   = Motor_GetCurrentHallState();
+                msg.avg   = mstatus.hall_edge_count;
+                msg.val2  = (int32_t)mstatus.actual_speed_rpm;
+
+                // Send duty as integer ×10 for accurate 1 decimal place printing
+                msg.avg2  = (int32_t)(mstatus.pwm_duty_percent * 10);
+
+                // Keep float versions too (useful for other things)
+                msg.fval  = mstatus.pwm_duty_percent;
+                msg.favg  = mstatus.motor_power_w;
+                msg.tick  = xTaskGetTickCount();
+
+                if (xQueueSend(xQueue, &msg, 0) != pdPASS)
+                {
+                    xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
+                }
+                else
+                {
+                    xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY);
+                }
+            }
+        }
+
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));
     }
 }
 
@@ -196,84 +252,42 @@ static void prvSHT31Task(void *pvParameters)
 {
     (void)pvParameters;
 
-    TempHumiditySample_t sample;
+    float temperature = 0.0f;
+    float humidity = 0.0f;
     struct MsgObj xMsgObj = {0};
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    uint32_t sampleCount = 0;
 
-    SafeUARTprintf("=== SHT31 Task Started ===\r\n");
-    SafeUARTprintf("SHT31 route: %s\r\n", SHT31_GetPinRouteDescription());
-
-    // Initialise the SHT31 driver using the system clock
-    TempHumidity_Init(g_ui32SysClock);
-
-    if (SHT31_IsDetected())
-    {
-        SafeUARTprintf("SHT31 detected at I2C address 0x%02x\r\n",
-                       (unsigned int)SHT31_GetI2CAddress());
-    }
-    else
-    {
-        SafeUARTprintf("SHT31 not detected during init\r\n");
-    }
+    SafeUARTprintf("=== SHT31 Task (I2C2 shared) Started ===\r\n");
 
     for (;;)
     {
-        // === Protect SHT31 I2C access with mutex ===
-        if (xSemaphoreTake(xI2C2Mutex, pdMS_TO_TICKS(300)) == pdPASS)
+        bool success = false;
+
+        if (xSemaphoreTake(xI2C2Mutex, pdMS_TO_TICKS(400)) == pdPASS)
         {
-            TempHumidity_Update();
-            TempHumidity_GetLatest(&sample);
+            success = SHT31_Read(&temperature, &humidity);
             xSemaphoreGive(xI2C2Mutex);
         }
-        else
-        {
-            // Failed to get mutex → mark sample as invalid
-            sample.valid = false;
-            sample.status = SHT31_STATUS_I2C_TIMEOUT;
-        }
 
-        sampleCount++;
-
-        // Send SHT31 through the same queue as OPT3001 and IMU
+        // Send data through the same queue
         xMsgObj.id   = SENSOR_ID_SHT31;
-        xMsgObj.tick = sampleCount;
-        xMsgObj.seq  = (uint32_t)sample.status;
+        xMsgObj.tick = xTaskGetTickCount();
 
-        if (sample.valid)
+        if (success)
         {
-            // Convert floats to x100 integers before queueing
-            int32_t rawTemp_x100  = FloatToX100(sample.raw_temperature_c);
-            int32_t filtTemp_x100 = FloatToX100(sample.filtered_temperature_c);
-
-            uint32_t rawHum_x100  = FloatToUX100(sample.raw_humidity_rh);
-            uint32_t filtHum_x100 = FloatToUX100(sample.filtered_humidity_rh);
-
-            xMsgObj.val  = rawTemp_x100;
-            xMsgObj.avg  = (uint32_t)filtTemp_x100;
-            xMsgObj.val2 = (int32_t)rawHum_x100;
-            xMsgObj.avg2 = (int32_t)filtHum_x100;
-            xMsgObj.flag = 0U;
+            xMsgObj.val  = FloatToX100(temperature);                 // filtered later if needed
+            xMsgObj.val2 = (int32_t)FloatToUX100(humidity);
+            xMsgObj.flag = 0;
+            g_bSHT31Valid = true;
         }
         else
         {
-            xMsgObj.val  = 0;
-            xMsgObj.avg  = 0;
-            xMsgObj.val2 = 0;
-            xMsgObj.avg2 = 0;
-            xMsgObj.flag = 1U;
+            xMsgObj.flag = 1;
+            g_bSHT31Valid = false;
         }
 
-        if (xQueueSend(xQueue, &xMsgObj, 0) != pdPASS)
-        {
-            xEventGroupSetBits(xEventGroup, EVENT_QUEUE_FULL);
-        }
-        else
-        {
-            xEventGroupSetBits(xEventGroup, EVENT_SENSOR_DATA_READY);
-        }
-
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1000));
+        xQueueSend(xQueue, &xMsgObj, 0);
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1000));   // 1 Hz is fine for temp/humidity
     }
 }
 
@@ -306,14 +320,23 @@ static void readerTask(void *pvParameters)
     EventBits_t uxBits;
     uint32_t messagesDiscarded = 0;
     uint16_t missingSampleCount = 0;
-    uint32_t filt_avg10 = 4000;
-    int32_t Lastmagnitude = 0;
+    uint32_t filt_avg10 = 0;
+    //int diffmag = 0;
+    //static uint32_t Hfilt_avg10 = 0;
+    static uint32_t Cfilt_avg10 = 0;
+    //int32_t Lastmagnitude = 4000;
     (void)pvParameters;
 
     SafeUARTprintf("Reader Task Started - Draining queue, keeping latest per sensor...\r\n");
 
     for (;;)
     {
+
+            // Clear all latched faults here
+        // g_ui32ActiveFaults &= ~(FAULT_EBRAKE | FAULT_OVERCURRENT | 
+        //                         FAULT_ACCEL_SENSOR | 
+        //                         FAULT_RANGE_SENSOR);
+
         // Wait for sensor/event updates, but timeout regularly
         uxBits = xEventGroupWaitBits(xEventGroup,
                                      (EVENT_SENSOR_MISSED |
@@ -323,39 +346,69 @@ static void readerTask(void *pvParameters)
                                       EVENT_SENSOR_DATA_READY |
                                       EVENT_DISPLAY_HOLD |
                                       EVENT_MOTOR_STATE_CHANGE | 
-                                      EVENT_HIGH_ACCEL_LIMIT),
+                                      EVENT_HIGH_ACCEL_LIMIT |
+                                      EVENT_FAULT_RANGE),
                                      pdTRUE,
                                      pdFALSE,
                                      pdMS_TO_TICKS(100));
 
         if (uxBits & EVENT_MOTOR_STATE_CHANGE)
         {
-            if (g_eMotorState == MOTOR_CONTROL_STATE_ESTOP_BRAKING || g_eMotorState == MOTOR_CONTROL_STATE_FAULT_LATCHED)
+            // if (g_eMotorState == MOTOR_CONTROL_STATE_ESTOP_BRAKING || g_eMotorState == MOTOR_CONTROL_STATE_FAULT_LATCHED)
+            // {
+            //     g_ui32ActiveFaults |= FAULT_EBRAKE;
+            // }
+            // else
+            // {
+            //     g_ui32ActiveFaults &= ~FAULT_EBRAKE;
+            // }
+        }
+
+        if (uxBits & EVENT_QUEUE_FULL)
+        {
+            SafeUARTprintf("EVENT: QUEUE FULL! Message dropped.\r\n");
+        }
+
+        if (uxBits & EVENT_LUXHIGH_THRESHOLD)
+        {
+            SafeUARTprintf("EVENT: HIGH THRESHOLD crossed! (Filtered > 1000 lux)\r\n");
+        }
+
+        if(uxBits & EVENT_FAULT_RANGE)
+        {
+            static char buff1[50];
+            usprintf(buff1,"EVENT: CLOSE DETECTION (Filtered < %d mm)\r\n",g_ui32CrashThreshold);
+
+        }
+        if(uxBits & EVENT_HIGH_ACCEL_LIMIT)
+        {
+            static char buff1[50];
+            usprintf(buff1,"EVENT: HIGH ACCEL LEVELS (Filtered < %d)\r\n",g_ui32CrashThreshold);
+
+        }
+        static uint8_t lighttimer = 0;
+        if(uxBits & EVENT_LUXLOW_THRESHOLD)
+        {
+            static char buff1[50];
+            //usprintf(buff1,"EVENT: LUXLOW THRESHOLD (Filtered < %d lux)\r\n",g_ui32LuxMinThreshold);
+            SafeUARTprintf(buff1);            
+            //if (!uiIndex)  LEDWrite(LED_D1, LED_D1);
+            LEDWrite(LED_D1, LED_D1);
+            lighttimer = 10;
+        }
+        else
+        {   
+            if(lighttimer > 1)
             {
-                g_ui32ActiveFaults |= FAULT_EBRAKE;
+                lighttimer--;
             }
             else
             {
-                g_ui32ActiveFaults &= ~FAULT_EBRAKE;
+                LEDWrite(LED_D1|LED_D2|LED_D3|LED_D4, 0);
             }
+            
         }
-        if(g_ePrintMode)
-        {
-            if (uxBits & EVENT_QUEUE_FULL)
-            {
-                SafeUARTprintf("EVENT: QUEUE FULL! Message dropped.\r\n");
-            }
-
-            if (uxBits & EVENT_LUXHIGH_THRESHOLD)
-            {
-                SafeUARTprintf("EVENT: HIGH THRESHOLD crossed! (Filtered > 1000 lux)\r\n");
-            }
-
-            if (uxBits & EVENT_LUXLOW_THRESHOLD)
-            {
-                SafeUARTprintf("EVENT: LOW THRESHOLD crossed! (Filtered < 10 lux)\r\n");
-            }
-        }
+        
                 // Reset the local "latest message" cache each reader cycle
         for (uint8_t id = SENSOR_ID_OPT3001; id <= SENSOR_ID_SHT31; id++)
         {
@@ -456,12 +509,17 @@ static void readerTask(void *pvParameters)
                                         magnitude,                
                                         pData->flag);
                     }
-
-                    if((Lastmagnitude - magnitude) > 3000)
-                    {
-                        xEventGroupSetBits(xEventGroup, EVENT_HIGH_ACCEL_LIMIT);
+                   // diffmag = abs(Lastmagnitude - magnitude);
+                    if(magnitude > 4700 && (g_eMotorState == MOTOR_RUNNING || g_eMotorState == MOTOR_STARTING))
+                    {   
+                        g_ui32CrashLevels = magnitude;
+                        g_ui32ActiveFaults |= FAULT_ACCEL_SENSOR;
+                        if (g_ui32Panel == 0) 
+                        {
+                            WidgetPaint((tWidget *)&g_sFaultPanel);
+                        }
                     }
-                    Lastmagnitude = magnitude;
+                    //Lastmagnitude = magnitude;
 
                     if(g_bIMUDisplayHold)
                     {
@@ -484,16 +542,24 @@ static void readerTask(void *pvParameters)
                     {
                         break;
                     }
-                    // if(g_ePrintMode)
-                    // {
-                    SafeUARTprintf("RX xQueue id=0x%02x x=%3d flag=%u \r\n",
+                    if(g_ePrintMode)
+                    {
+                        SafeUARTprintf("RX xQueue id=0x%02x x=%3d flag=%u \r\n",
                                     pData->id,
                                     pData->val,     //Range       
                                     pData->flag);
-                    //}
+                    }
 
                     filt_avg10 = UpdateAverage(pData->val,SENSOR_ID_RANGE); 
-
+                    if(filt_avg10 < g_ui32MinSafeDistance)//  && (g_eMotorState == MOTOR_RUNNING || g_eMotorState == MOTOR_STARTING))
+                    {   
+                        g_ui32CurrentDistance = filt_avg10;
+                        g_ui32ActiveFaults |= FAULT_RANGE_SENSOR;
+                        if (g_ui32Panel == 0) 
+                        {
+                            WidgetPaint((tWidget *)&g_sFaultPanel);
+                        }
+                    }
                     if(g_bRNGDisplayHold)
                     {
                         g_plotRNGRawHistory[g_plotRNGIndex] = (uint32_t)pData->val;
@@ -509,35 +575,59 @@ static void readerTask(void *pvParameters)
                 }
                 case SENSOR_ID_HALL:
                 {
-                    if (pData->flag == 1U)
-                    {
+                    if (pData->flag == 1U) 
                         break;
-                    }
-                    if(g_ePrintMode)
+
+                    static uint8_t counter = 0;
+                    Hfilt_avg10 = UpdateAverage((unsigned int)pData->val2, SENSOR_ID_HALL); 
+                    Cfilt_avg10 = UpdateAverage((uint32_t)pData->favg, 67U);
+                    // === Update all motor GUI variables from queue ===
+                    g_ui32RCVSpeed             =  Hfilt_avg10; // send to gui to print
+                    g_ui32MotorActualRPM    = (uint32_t)pData->val2;
+                    g_ui32MotorPWMPercent   = (uint32_t)pData->avg2;
+                    g_ui32MotorPowerW       = Cfilt_avg10;     // Power from Hall queue
+                    // Feed dashboard speed graph
+
+                    if (g_ui32MotorPowerW > 40)
                     {
-                        SafeUARTprintf("RX xQueue id=0x%02x x=%3d y=%3d Mag=%3d flag=%u \r\n",
-                                        pData->id,
-                                        pData->val,     //x
-                                        pData->val2,    //y
-                                        pData->avg2,    //z                  
-                                        pData->flag);
+                        g_ui32ActiveFaults |= FAULT_OVERCURRENT;
+                        if (g_ui32Panel == 0) 
+                        {
+                            WidgetPaint((tWidget *)&g_sFaultPanel);
+                        }
                     }
 
-                    int32_t magnitude = isqrt(pData->val * pData->val + pData->val2 * pData->val2 + pData->avg2 * pData->avg2);
-                    if((Lastmagnitude - magnitude) > 3000)
+                    g_plotDashSpeedHistory[g_plotDashIndex] = (unsigned int)pData->val2;
+                    g_plotDashAvgHistory[g_plotDashIndex] = Hfilt_avg10;
+                    g_plotDashIndex = (g_plotDashIndex + 1) % PLOT_LARGE_HISTORY_SIZE; 
+
+                    if (counter > 4) // about 4*50ms
                     {
-                        xEventGroupSetBits(xEventGroup, EVENT_HIGH_ACCEL_LIMIT);
+                        SafeUARTprintf("RX xQueue HALL: id=0x%02x state=0x%02x edges=%u speed=%d AVG=%3u ref speed %3d rpm duty=%d.%d%%\r\n",
+                                    pData->id,
+                                    (unsigned)pData->val,
+                                    (unsigned)pData->avg,
+                                    (int)pData->val2,
+                                    Hfilt_avg10,g_ui32DesiredSpeedRPM,
+                                    (int)(pData->avg2 / 10),      // whole part
+                                    (int)(pData->avg2 % 10));     // decimal part
+                        counter = 0;
                     }
-                    Lastmagnitude = magnitude;
-
-                    g_plotIMUxHistory[g_plotIMUIndex] = abs(pData->val);
-                    g_plotIMUyHistory[g_plotIMUIndex] = abs(pData->val2);
-                    g_plotIMUmagHistory[g_plotIMUIndex] = magnitude;
-                    g_plotIMUIndex = (g_plotIMUIndex + 1) % PLOT_HISTORY_SIZE;
-
-                    if (g_ui32Panel == 3)   // updates graph on panel 3
+                    else
                     {
-                        WidgetPaint((tWidget *)&g_sCanvas3);
+                        counter++;
+                    }
+
+                    // Safety checks
+                    uint8_t hallState = (uint8_t)pData->val;
+                    if (hallState == 0x00 || hallState == 0x07)
+                    {
+                        if (g_eMotorState == MOTOR_RUNNING || g_eMotorState == MOTOR_STARTING)
+                        {
+                            SafeUARTprintf("HALL: Invalid state -> E-STOP\r\n");
+                            Motor_Brake();
+                            SetMotorState(MOTOR_ESTOP_BRAKING);
+                        }
                     }
 
                     break;
@@ -545,8 +635,8 @@ static void readerTask(void *pvParameters)
                 case SENSOR_ID_SHT31:
                 {
                     // Extract SHT31 filtered values from the message
-                    int32_t temp_x100 = (int32_t)pData->avg;
-                    uint32_t hum_x100 = (uint32_t)pData->avg2;
+                    int32_t temp_x100 = (int32_t)pData->val;
+                    uint32_t hum_x100 = (uint32_t)pData->val2;
 
                     // Update GUI-facing globals
                     g_i32CabinTempCx100 = temp_x100;
@@ -589,15 +679,12 @@ static void readerTask(void *pvParameters)
                     //instead of this draw when the value changes 
                     //not on every update as it might not change
 
-                    // // Repaint only the active panel
-                    // if (g_ui32Panel == 0)
-                    // {
-                    //     WidgetPaint((tWidget *)&g_sDashboard);
-                    // }
+                    // Repaint always
+                    UpdateTemp();
 
-                    if (g_ui32Panel == 1)
+                    if (g_ui32Panel == 5)           // ← Now updates Panel 6 (Temp panel)
                     {
-                        WidgetPaint((tWidget *)&g_sEngineCanvas);
+                        WidgetPaint((tWidget *)&g_sCanvas5);
                     }
 
                     break;
@@ -669,7 +756,7 @@ static void prvIMUTask(void *pvParameters)
             xSemaphoreGive(xI2C2Mutex);
         }
 
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100));
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));
     }
 }
 
@@ -727,7 +814,7 @@ static void prvOptTask(void *pvParameters)
         }
 
         xQueueSend(xQueue, &msg, 0);
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(600));   // Read every ~200ms
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));   // Read every ~200ms
     }
 }
 
@@ -749,7 +836,7 @@ void prvDisplayTask(void *pvParameters)
     g_ui32Panel = 0;
     WidgetAdd(WIDGET_ROOT, (tWidget *)g_psPanels);    
     WidgetAdd((tWidget *)&g_psPanels[0], (tWidget *)&g_sTimeCanvas);
-    
+    WidgetAdd((tWidget *)&g_psPanels[0], (tWidget *)&g_sTempCanvas);
 
     WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sLightValCanvas);
     WidgetAdd((tWidget *)&g_psPanels[2], (tWidget *)&g_sLightValCanvas2);
@@ -771,8 +858,10 @@ void prvDisplayTask(void *pvParameters)
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sMotorStateCanvas);
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultPanel);  
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sStartButton);
-    WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sCanvasDash);    
+    //WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sCanvasDash);    
     WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sFaultButtonCanvas);
+    // Add the new blue canvas to the dashboard
+    //WidgetAdd((tWidget *)&g_sDashboard, (tWidget *)&g_sDashboardBlueCanvas);
 
     WidgetAdd((tWidget *)&g_sFaultButtonCanvas, (tWidget *)&g_sClearFaultButton);
     g_bFaultButtonVisible = true;   // initial state
@@ -794,6 +883,22 @@ void prvDisplayTask(void *pvParameters)
     for (;;)
     {
         WidgetMessageQueueProcess();
+
+        // Update the blue dashboard area directly (no WidgetPaint)
+        if (g_ui32Panel == 0)
+        {
+            switch(g_eMotorState)
+            {   case MOTOR_STARTING:
+                case MOTOR_ESTOP_BRAKING:
+                case MOTOR_RUNNING:
+                    DrawDashboardGraphAndValues();
+                break;
+                default:
+                break;
+            }
+        }
+
+
         vTaskDelay(pdMS_TO_TICKS(20)); 
     }
 }
@@ -906,238 +1011,310 @@ void xTimerHandler(void)
     UpdateTime();
 }
 
+
 static void prvMotorTask(void *pvParameters)
 {
-    TickType_t xLastWakeTime;
-    MotorStatus_t xMotorStatus;
-    MotorControlFault_t eFaultReason;
-    uint32_t ui32RequestedSpeed;
-    bool bExternalFaultActive;
-
     (void)pvParameters;
 
-    SafeUARTprintf("=== Motor Task Started ===\r\n");
+    MotorStatus_t motorStatus;
+    //uint32_t requestedSpeedRpm = 0;
+    bool externalFaultActive = false;
+
+    SafeUARTprintf("=== Motor Task Started (State Machine) ===\r\n");
 
     Motor_Init();
 
     if (!Motor_IsReady())
     {
-        SafeUARTprintf("ERROR: Motor backend failed to initialise\r\n");
+        SafeUARTprintf("ERROR: Motor driver failed to initialise\r\n");
         g_ui32ActiveFaults |= FAULT_MOTOR_SENSOR;
-        SetMotorState(MOTOR_CONTROL_STATE_FAULT_LATCHED);
+        SetMotorState(MOTOR_FAULT_LATCHED);
     }
 
-    xLastWakeTime = xTaskGetTickCount();
-
-    for (;;)
-    {
-        ui32RequestedSpeed = g_ui32DesiredSpeedRPM;
-
-        bExternalFaultActive =
-            ((g_ui32ActiveFaults & (FAULT_EBRAKE | FAULT_OVERCURRENT)) != 0U) ||
-            (g_eMotorState == MOTOR_CONTROL_STATE_ESTOP_BRAKING) ||
-            (g_eMotorState == MOTOR_CONTROL_STATE_FAULT_LATCHED);
-
-        eFaultReason = MOTOR_CONTROL_FAULT_MANUAL_ESTOP;
-
-        if ((g_ui32ActiveFaults & FAULT_OVERCURRENT) != 0U)
-        {
-            eFaultReason = MOTOR_CONTROL_FAULT_POWER;
-        }
-        else if (g_ui32FilteredBodyAccel > g_ui32CrashThreshold)
-        {
-            eFaultReason = MOTOR_CONTROL_FAULT_ACCELERATION;
-        }
-        else if (g_ui32CurrentDistance < g_ui32DetRangeVal)
-        {
-            eFaultReason = MOTOR_CONTROL_FAULT_DISTANCE;
-        }
-
-        if (g_bMotorFaultAckRequested || g_bFaultAcknowledged)
-        {
-            g_bMotorFaultAckRequested = false;
-            g_bFaultAcknowledged = false;
-
-            Motor_AcknowledgeFault();
-            g_ui32ActiveFaults = 0;
-        }
-        else if (bExternalFaultActive)
-        {
-            Motor_EStop(eFaultReason);
-        }
-        else
-        {
-            Motor_SetSpeed((float)ui32RequestedSpeed);
-
-            if (g_bMotorStartRequested)
-            {
-                g_bMotorStartRequested = false;
-
-                if (ui32RequestedSpeed > 0U)
-                {
-                    Motor_Start();
-                }
-            }
-
-            if (g_bMotorStopRequested || ui32RequestedSpeed == 0U)
-            {
-                g_bMotorStopRequested = false;
-                Motor_Stop();
-            }
-            else if ((g_eMotorState == MOTOR_CONTROL_STATE_STARTING) ||
-                     (g_eMotorState == MOTOR_CONTROL_STATE_RUNNING))
-            {
-                Motor_Start();
-            }
-        }
-
-        Motor_ControlStep(MOTOR_CONTROL_PERIOD_MS);
-        xMotorStatus = Motor_GetStatus();
-
-        g_ui32MotorReferenceRPM = (uint32_t)xMotorStatus.reference_speed_rpm;
-        g_ui32MotorActualRPM = (uint32_t)xMotorStatus.actual_speed_rpm;
-        g_ui32MotorPWMPercent = (uint32_t)xMotorStatus.pwm_duty_percent;
-        g_ui32MotorPowerW = (uint32_t)xMotorStatus.motor_power_w;
-        g_ui32Speed = (uint16_t)xMotorStatus.actual_speed_rpm;
-
-        switch (xMotorStatus.state)
-        {
-            case MOTOR_CONTROL_STATE_STARTING:
-                    SafeUARTprintf("Motor STARTING...\r\n");
-                    vTaskDelay(pdMS_TO_TICKS(2000));        // Starting sequence
-                    SetMotorState(MOTOR_CONTROL_STATE_RUNNING);
-                break;
-
-            case MOTOR_CONTROL_STATE_RUNNING:
-                SafeUARTprintf("Motor RUNNING - Normal operation\r\n");
-                vTaskDelay(pdMS_TO_TICKS(8000));        // Run for 8 seconds
-                
-                // Random chance to create a fault (for demo)
-                if ((rand() % 20) == 0)                  // ~5% chance
-                    SetMotorState(MOTOR_CONTROL_STATE_FAULT_LATCHED);
-                else
-                    SetMotorState(MOTOR_CONTROL_STATE_IDLE);          // Back to idle
-                break;
-
-            case MOTOR_CONTROL_STATE_FAULT_LATCHED:
-                // SafeUARTprintf("!!! MOTOR FAULT !!!\r\n");
-                // g_ui32ActiveFaults |= FAULT_EBRAKE | FAULT_OVERCURRENT;
-                // vTaskDelay(pdMS_TO_TICKS(5000));        // Stay in fault for 5s
-                
-                // // Auto recover for demo
-                // g_ui32ActiveFaults = 0;
-                // SetMotorState(MOTOR_IDLE);
-
-                SafeUARTprintf("!!! MOTOR FAULT !!!\r\n");
-                g_ui32ActiveFaults |= FAULT_EBRAKE | FAULT_OVERCURRENT;
-                g_bFaultAcknowledged = false;
-                g_ui32ActiveFaults |= FAULT_EBRAKE; 
-                if (g_eMotorState != MOTOR_CONTROL_STATE_ESTOP_BRAKING)
-                {
-                    SetMotorState(MOTOR_CONTROL_STATE_ESTOP_BRAKING);
-                }
-                break;
-                // PAUSE motor task until user presses ACK FAULT button
-                while (g_eMotorState == MOTOR_CONTROL_STATE_FAULT_LATCHED && !g_bFaultAcknowledged)
-                {
-                    if (estopRequested)
-                    {
-                        SetMotorState(MOTOR_CONTROL_STATE_RUNNING);
-                    }
-                    break;
-                }
-            case MOTOR_CONTROL_STATE_IDLE:
-            default:
-                if (g_eMotorState != MOTOR_CONTROL_STATE_IDLE)
-                {
-                    SetMotorState(MOTOR_CONTROL_STATE_IDLE);
-                }
-                break;
-                 
-        }
-
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(MOTOR_CONTROL_PERIOD_MS*5));
-    }
-}
-
-// Commented out fake fault simulator 
-/*
-static void prvFaultSimulatorTask(void *pvParameters)
-{
-    (void)pvParameters;
-    
-    // Small delay to let display task start first
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    
-    SafeUARTprintf("=== Random Fault Simulator Task Started ===\r\n");
-    SafeUARTprintf("Free Heap now: %u bytes\r\n", xPortGetFreeHeapSize());
-    
-    srand(xTaskGetTickCount());   // Better random seed
-    
     TickType_t xLastWakeTime = xTaskGetTickCount();
 
     for (;;)
     {
-        // Toggle faults less frequently
-        if ((rand() % 4) == 0)   // ~25% chance
-        {
-            uint32_t faultToToggle = 1U << (rand() % 4);
+        motorStatus = Motor_GetStatus();
+        //requestedSpeedRpm = g_ui32DesiredSpeedRPM;
 
-            if (g_ui32ActiveFaults & faultToToggle)
+        externalFaultActive =
+            ((g_ui32ActiveFaults & (FAULT_EBRAKE | FAULT_OVERCURRENT)) != 0) ||
+            (g_ui32FilteredBodyAccel > g_ui32CrashThreshold) ||
+            (g_ui32CurrentDistance < g_ui32DetRangeVal);
+
+        switch (g_eMotorState)
+        {
+            case MOTOR_IDLE:
             {
-                g_ui32ActiveFaults &= ~faultToToggle;
-                SafeUARTprintf("FAULT CLEARED: 0x%02X\r\n", (unsigned int)faultToToggle);
+                Motor_SetDutyPercent(0.0f);
+                Motor_DisableCommutation();
+
+                if (g_bMotorStartRequested)
+                {
+                    g_bMotorStartRequested = false;
+                    SafeUARTprintf("Motor: Armed -> STARTING\r\n");
+                    SetMotorState(MOTOR_STARTING);
+                }
+                break;
             }
-            else
+
+            case MOTOR_STARTING:
             {
-                g_ui32ActiveFaults |= faultToToggle;
-                SafeUARTprintf("!!! FAULT TRIGGERED: 0x%02X\r\n", (unsigned int)faultToToggle);
+                if (externalFaultActive)
+                {
+                    //Motor_Brake();
+                    SetMotorState(MOTOR_ESTOP_BRAKING);
+                    break;
+                }
+
+                Motor_Enable();
+                Motor_EnableCommutation();
+
+                static uint32_t startupTimer = 0;
+                static uint32_t lastEdgeCount = 0;
+                static uint8_t  stableFeedbackCount = 0;
+
+                startupTimer += MOTOR_CONTROL_PERIOD_MS;
+
+                motorStatus = Motor_GetStatus();
+
+                bool motorWasStopped = (motorStatus.actual_speed_rpm < 30);
+                bool edgesAreIncreasing = (motorStatus.hall_edge_count > lastEdgeCount);
+                bool hasMeaningfulSpeed = (motorStatus.actual_speed_rpm > 80);
+
+                // === Phase 1: Open-loop kickstart (when motor is stopped) ===
+                if (motorWasStopped && startupTimer < 600)
+                {
+                    Motor_SetDutyPercent(32.0f);           // Strong initial kick
+                }
+                // === Phase 2: Maintain torque while waiting for movement ===
+                else if (!edgesAreIncreasing && startupTimer < 1500)
+                {
+                    Motor_SetDutyPercent(24.0f);
+                }
+                // === Phase 3: Detect and validate Hall feedback ===
+                else
+                {
+                    if (edgesAreIncreasing || hasMeaningfulSpeed)
+                    {
+                        stableFeedbackCount++;
+
+                        // Require consistent feedback for ~300ms before trusting it
+                        if (stableFeedbackCount > 6)
+                        {
+                            startupTimer = 0;
+                            lastEdgeCount = 0;
+                            stableFeedbackCount = 0;
+                            SafeUARTprintf("Motor: Stable Hall feedback confirmed -> RUNNING\r\n");
+                            SetMotorState(MOTOR_RUNNING);
+                        }
+                    }
+                    else
+                    {
+                        stableFeedbackCount = 0; // reset if feedback becomes unstable
+                        Motor_SetDutyPercent(20.0f);
+                    }
+                }
+
+                lastEdgeCount = motorStatus.hall_edge_count;
+
+                // Safety timeout (prevent getting stuck in STARTING forever)
+                if (startupTimer > 4000)
+                {
+                    startupTimer = 0;
+                    lastEdgeCount = 0;
+                    stableFeedbackCount = 0;
+                    SafeUARTprintf("Motor: Startup timeout -> forcing RUNNING\r\n");
+                    SetMotorState(MOTOR_RUNNING);
+                }
+
+                break;
             }
 
-            if (g_ui32Panel == 0)
-                UpdateFaultPanel();
+            case MOTOR_RUNNING:
+            {
+                if (externalFaultActive)
+                {
+                    SafeUARTprintf("Motor: Sensor E-STOP triggered\r\n");
+                    //Motor_DisableCommutation();
+                    //Motor_Brake();
+                    SetMotorState(MOTOR_ESTOP_BRAKING);
+
+                    break;
+                }
+
+                // if (g_bMotorStopRequested)
+                // {
+                //     g_bMotorStopRequested = false;r
+                //     Motor_SetDutyPercent(0.0f);
+                //     SetMotorState(MOTOR_IDLE);
+                //     SafeUARTprintf("Motor: Stopped -> IDLE\r\n");
+                //     break;
+                // }
+
+                Motor_EnableCommutation();
+                motorStatus = Motor_GetStatus();
+
+                float target = g_ui32DesiredSpeedRPM;
+
+                float duty = SpeedController_Update(target, g_ui32MotorActualRPM, 500, 500, false);
+                Motor_SetDutyPercent(duty);
+
+                break;
+            }
+
+            case MOTOR_ESTOP_BRAKING:
+            {
+                Motor_EnableCommutation();
+                motorStatus = Motor_GetStatus();
+
+                // Use 1000 RPM/s decel, and RESET the controller on entry
+                static bool firstEntry = true;
+                float duty = SpeedController_Update(0, g_ui32MotorActualRPM, 500, 1000, firstEntry);
+                Motor_SetDutyPercent(duty);
+
+                if (firstEntry) firstEntry = false;
+
+                // Debounced stop detection
+                static uint8_t stoppedCount = 0;
+                if (g_ui32MotorActualRPM <= MOTOR_STOPPED_RPM) 
+                {
+                    stoppedCount++;
+                    if (stoppedCount >= 4)          // ~80ms confirmation at 20ms loop
+                    {
+                        stoppedCount = 0;
+                        firstEntry = true;          // reset for next time
+                        SetMotorState(MOTOR_FAULT_LATCHED);
+                        SafeUARTprintf("Motor: E-STOP complete -> FAULT_LATCHED\r\n");
+                    }
+                }
+                else
+                {
+                    stoppedCount = 0;
+                }
+                break;
+            }
+            case MOTOR_FAULT_LATCHED:
+            {
+                Motor_Disable();
+                Motor_DisableCommutation();
+
+                if (g_bMotorFaultAckRequested || g_bFaultAcknowledged)
+                {
+                    g_bMotorFaultAckRequested = false;
+                    g_bFaultAcknowledged = false;
+                    Motor_ClearFault();
+                    g_ui32ActiveFaults &= ~(FAULT_EBRAKE | FAULT_OVERCURRENT |FAULT_ACCEL_SENSOR | FAULT_RANGE_SENSOR);
+                    SafeUARTprintf("Motor: Fault acknowledged -> IDLE\r\n");
+                    SetMotorState(MOTOR_IDLE);
+                }
+                break;
+            }
+
+            default:
+                SetMotorState(MOTOR_IDLE);
+                break;
         }
 
-        // Full clear occasionally
-        if ((rand() % 4) == 0)
-        {
-            g_ui32ActiveFaults = 0;
-            SafeUARTprintf("--- ALL FAULTS CLEARED ---\r\n");
-            if (g_ui32Panel == 0)
-                UpdateFaultPanel();
-        }
-
-
-        // ====================== ENGINE PANEL SENSOR SIMULATION ======================
-        g_ui32FilteredBodyAccel = 200 + (rand() % 900);   // varies 200-1100
-        g_ui32CurrentDistance   = 30 + (rand() % 300);    // varies 30-330
-        g_ui32EngineTemp        = 35 + (rand() % 60);     // varies 35-95 °C
-
-        // Crash / Safe-distance e-stop via sensing subsystem
-        if (g_ui32FilteredBodyAccel > g_ui32CrashThreshold ||
-            g_ui32CurrentDistance < g_ui32DetRangeVal)
-        {
-            g_ui32ActiveFaults |= FAULT_EBRAKE;
-            SetMotorState(MOTOR_FAULT_LATCHED);
-            SafeUARTprintf("!!! E-STOP TRIGGERED (Accel or Distance) !!!\r\n");
-        }
-
-        // Heating / Cooling logic - Commented out since its now sensor-driven
-        
-        
-        if (g_ui32EngineTemp > g_ui32HeatingThreshold)
-            g_bCoolingOn = true;
-        else if (g_ui32EngineTemp < g_ui32CoolingThreshold)
-            g_bCoolingOn = false;
-        
-
-        // Update Engine Panel live values
-        // if (g_ui32Panel == 1)
-        // {
-        //     WidgetPaint((tWidget *)&g_sEngineCanvas);
-        // }
-
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(4000));  // Every 4 seconds
+        Motor_Update(MOTOR_CONTROL_PERIOD_MS);
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(MOTOR_CONTROL_PERIOD_MS));
     }
 }
-*/
+
+// Simple speed to duty mapping (replace with PI later if desired)
+float SpeedToDutyPercent(uint32_t rpm)
+{
+    const float MAX_RPM = 3000.0f;
+    float duty = ((float)rpm / MAX_RPM) * 70.0f;   // max ~70% duty
+    if (duty > 70.0f) duty = 70.0f;
+    if (duty < 5.0f && rpm > 0) duty = 5.0f;
+    return duty;
+}
+
+void SetMotorState(MotorState_t newState)
+{
+    if (newState == g_eMotorState)
+        return;
+
+    g_eMotorState = newState;
+
+    if (xEventGroup)
+        xEventGroupSetBits(xEventGroup, EVENT_MOTOR_STATE_CHANGE);
+
+    // Show/Hide START button based on state
+    if (g_eMotorState == MOTOR_IDLE)
+        ShowStartButton();
+    else
+        HideStartButton();
+
+    if (g_ui32Panel == 0)
+    {
+        UpdateMotorStateCanvas();
+        UpdateFaultPanel();
+    }
+}
+
+float RampToTarget(float current, float target, float maxRatePerSecond, float dtSeconds)
+{
+    float error = target - current;
+    float maxDelta = maxRatePerSecond * dtSeconds;
+
+    if (error > maxDelta) return current + maxDelta;
+    if (error < -maxDelta) return current - maxDelta;
+    return target;
+}
+
+
+float SpeedController_Update(uint32_t targetRpm, float actualRpm, 
+                             uint32_t Kp_scaled, uint32_t Ki_scaled, bool reset)
+{
+    static float integral = 0.0f;
+    static float lastDuty = 0.0f;
+
+    if (reset)
+    {
+        integral = 0.0f;
+        lastDuty = 0.0f;
+    }
+
+    // Feedforward (base duty)
+    float ffDuty = 0.0f;
+    if (targetRpm > 50)
+    {
+        ffDuty = ((float)targetRpm / 3000.0f) * 48.0f;
+        if (ffDuty < 8.0f) ffDuty = 8.0f;
+    }
+
+    // Use **filtered** speed for feedback (much more stable)
+    float filteredRpm = (float)Hfilt_avg10;   // ← important change
+
+    float error = (float)targetRpm - filteredRpm;
+    integral += error * (MOTOR_CONTROL_PERIOD_MS / 1000.0f);
+
+    // Stronger anti-windup
+    if (integral >  30.0f) integral =  30.0f;
+    if (integral < -20.0f) integral = -20.0f;
+
+    float Kp = Kp_scaled / 100.0f;
+    float Ki = Ki_scaled / 100.0f;
+
+    float fbDuty = (Kp * error) + (Ki * integral);
+
+    // Limit feedback authority (prevents big swings)
+    if (fbDuty >  15.0f) fbDuty =  15.0f;
+    if (fbDuty < -15.0f) fbDuty = -15.0f;
+
+    float duty = ffDuty + fbDuty;
+
+    if (duty > 65.0f) duty = 65.0f;
+    if (duty < 0.0f)  duty = 0.0f;
+
+    // Slower rate limit
+    const float maxChange = 3.5f;
+    if (duty > lastDuty + maxChange) duty = lastDuty + maxChange;
+    else if (duty < lastDuty - maxChange) duty = lastDuty - maxChange;
+
+    lastDuty = duty;
+    return duty;
+}

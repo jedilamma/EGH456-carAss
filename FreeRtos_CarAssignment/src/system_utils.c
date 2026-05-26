@@ -4,12 +4,14 @@
 #include "utils/uartstdio.h"
 #include "system_utils.h"
 
-// Moving average state for OPT3001 - Originally average divided by 10 even before 10 samples existed, 
+//  Originally average divided by 10 even before 10 samples existed, 
 // leading to inaccurate initial readings
 #define AVG_WINDOW 10
 static uint32_t LuxBuffer[AVG_WINDOW] = {0};
 static uint32_t RangeBuffer[AVG_WINDOW] = {0};
 static uint32_t IMUBuffer[AVG_WINDOW] = {0};
+static uint32_t HALBuffer[AVG_WINDOW] = {0};
+static uint32_t CURRBuffer[AVG_WINDOW] = {0};
 
 static uint32_t RSum = 0;
 static uint8_t RIndex = 0;
@@ -21,7 +23,13 @@ static uint32_t BSum = 0;
 static uint8_t BIndex = 0;
 static uint8_t BCount = 0;
 
+static uint32_t HSum = 0;
+static uint8_t HIndex = 0;
+static uint8_t HCount = 0;
 
+static uint32_t CSum = 0;
+static uint8_t CIndex = 0;
+static uint8_t CCount = 0;
 
 void EnableHighResTimer(void)
 {
@@ -257,6 +265,50 @@ uint32_t UpdateAverage(uint32_t Value,uint8_t SensorState)
                 RIndex = 0;
             }
             return RSum / RCount;
+        break;
+
+        case SENSOR_ID_HALL:
+            if (HCount < AVG_WINDOW)
+            {
+                HALBuffer[HIndex] = Value;
+                HSum += Value;
+                HCount++;
+            }
+            else
+            {
+                HSum -= HALBuffer[HIndex];
+                HALBuffer[HIndex] = Value;
+                HSum += Value;
+            }
+
+            HIndex++;
+            if (HIndex >= AVG_WINDOW)
+            {
+                HIndex = 0;
+            }
+            return HSum / HCount;
+        break;
+
+        case 67U: // current
+            if (CCount < AVG_WINDOW)
+            {
+                CURRBuffer[CIndex] = Value;
+                CSum += Value;
+                CCount++;
+            }
+            else
+            {
+                CSum -= CURRBuffer[CIndex];
+                CURRBuffer[CIndex] = Value;
+                CSum += Value;
+            }
+
+            CIndex++;
+            if (CIndex >= AVG_WINDOW)
+            {
+                CIndex = 0;
+            }
+            return CSum / CCount;
         break;
     }
     return 0;

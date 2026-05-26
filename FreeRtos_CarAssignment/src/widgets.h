@@ -16,7 +16,6 @@ typedef enum
 } PlotMode_t;
 
 
-
 // Main Panels
 extern tCanvasWidget g_psPanels[];
 
@@ -74,8 +73,8 @@ extern volatile uint8_t  g_ui8Hours, g_ui8Minutes, g_ui8Seconds;
 extern volatile uint8_t  g_ui8Day, g_ui8Month;
 extern volatile uint16_t g_ui16Year;
 extern volatile int16_t  g_i16MotorValue;
-extern uint16_t g_ui32Speed;
-extern volatile uint32_t g_ui32DesiredSpeedRPM;
+extern uint16_t g_ui32RCVSpeed; // this should only report from the sensor to the gui
+extern volatile uint32_t g_ui32DesiredSpeedRPM; // sets the target speed we want 
 extern volatile bool g_bMotorStartRequested;
 extern volatile bool g_bMotorStopRequested;
 extern volatile bool g_bMotorFaultAckRequested;
@@ -91,7 +90,7 @@ extern char *g_pcPanei32Names[];
 extern uint32_t g_ui32Panel;
 uint32_t g_ui32ButtonState;
 extern tContext sContext;
-
+extern void SetMotorState(MotorState_t newState);
 extern bool g_bOPTDisplayHold;
 extern bool g_bIMUDisplayHold;
 extern bool g_bRNGDisplayHold;
@@ -105,7 +104,6 @@ bool g_bStartButtonVisible;
 tCanvasWidget g_sDashboard;
 tPushButtonWidget g_sStartButton;
 tPushButtonWidget g_psSideButtons[6];
-
 
 void ShowStartButton(void);
 void HideStartButton(void);
@@ -128,16 +126,15 @@ void OnIMUPlotModeChange2(tWidget *psWidget, uint32_t bSelected);
 
 void OnPlotModeChange3(tWidget *psWidget, uint32_t bSelected);
 void OnPlotModeChange4(tWidget *psWidget, uint32_t bSelected);
-
 void OnPlotModeChange5(tWidget *psWidget, uint32_t bSelected);
 void OnPlotModeChange6(tWidget *psWidget, uint32_t bSelected);
 void UpdateFaultPanel(void);
-
+void UpdateDashboardSliderText(uint32_t value);
 void OnClearFaultButtonPress(tWidget *psWidget);
 void ShowAckFaultButton(void);
 void HideAckFaultButton(void);
 
-void OnDashCanvasPaint(tWidget *psWidget, tContext *psContext);
+//void OnDashCanvasPaint(tWidget *psWidget, tContext *psContext);
 
 void OnNext(tWidget *psWidget);
 void OnPrevious(tWidget *psWidget);
@@ -147,10 +144,11 @@ void OnDashButtonPress(tWidget *psWidget);
 void OnFaultPanelPaint(tWidget *psWidget, tContext *psContext);
 void UpdateFaultPanel(void);
 void UpdateMotorStateCanvas(void);
-void SetMotorState(MotorControlState_t newState);
+void DrawDashboardGraphAndValues(void);
+
 void OnDashboardSliderChange(tWidget *psWidget, int32_t i32Value);
 void UpdateTime(void);
-void UpdateTemp(tContext *psContext);
+void UpdateTemp(void);
 // ====================== Motor & Fault Globals ======================
 
 extern uint32_t g_ui32ActiveFaults;
@@ -174,11 +172,14 @@ extern tCanvasWidget g_sDistanceCanvas;
 extern tSliderWidget g_sMinDistanceSlider;
 extern tCanvasWidget g_sCoolingStatusCanvas;
 extern tCanvasWidget g_sCanvasDash;
+extern tCanvasWidget g_sDashboardBlueCanvas;
 
 extern uint32_t g_ui32LuxMinThreshold;
 extern uint32_t g_ui32CrashThreshold;
 extern uint32_t g_ui32MinSafeDistance;
 extern uint32_t g_ui32AccelMaxVal;
 extern uint32_t g_ui32DetRangeVal;
+
+
 
 #endif // DISPLAY_WIDGETS_H
