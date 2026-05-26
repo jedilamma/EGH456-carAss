@@ -57,11 +57,11 @@ tSliderWidget g_sAccelMaxSlider = SliderStruct(&g_sEngineCanvas,
                                              0,                     // No children
                                              &g_sKentec320x240x16_SSD2119,
                                              60, 60, 100, 15,       // x, y, width, height → Vertical
-                                             0, 20, 10,            // min, max, initial value
+                                             300, 500, 1000,            // min, max, initial value
                                              (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | 
                                               SL_STYLE_OUTLINE | SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),                                              
                                              ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
-                                             &g_sFontCm14, "10", 0, 0, OnAccelMaxSliderChange);
+                                             &g_sFontCm14, "500", 0, 0, OnAccelMaxSliderChange);
 
 
 tSliderWidget g_sDetRangeSlider = SliderStruct(&g_sEngineCanvas, 
@@ -69,29 +69,29 @@ tSliderWidget g_sDetRangeSlider = SliderStruct(&g_sEngineCanvas,
                                              0,                     // No children
                                              &g_sKentec320x240x16_SSD2119,
                                              60, 100, 100, 15,       // x, y, width, height → Vertical
-                                             0, 330, 1000,            // min, max, initial value
+                                             0, 90, 200,            // min, max, initial value
                                              (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | 
                                               SL_STYLE_OUTLINE | SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),                                              
                                              ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
-                                             &g_sFontCm14, "330", 0, 0, OnDetRangeSliderChange);     
+                                             &g_sFontCm14, "90", 0, 0, OnDetRangeSliderChange);     
                                              
 tSliderWidget g_sCrashTolSlider = SliderStruct(&g_sEngineCanvas, 
                                              NULL,                  // Next sibling
                                              0,                     // No children
                                              &g_sKentec320x240x16_SSD2119,
                                              60, 140, 100, 15,       // x, y, width, height → Vertical
-                                             0, 100, 50,            // min, max, initial value
+                                             4000, 4800, 6000,            // min, max, initial value
                                              (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | 
                                               SL_STYLE_OUTLINE | SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),                                              
                                              ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
-                                             &g_sFontCm14, "50", 0, 0, OnCrashTolSliderChange);
+                                             &g_sFontCm14, "4800", 0, 0, OnCrashTolSliderChange);
                                              
 tSliderWidget g_sLuxMinSlider = SliderStruct(&g_sEngineCanvas, 
                                              NULL,                  // Next sibling
                                              0,                     // No children
                                              &g_sKentec320x240x16_SSD2119,
                                              60, 180, 100, 15,       // x, y, width, height → Vertical
-                                             3, 40, 10,            // min, max, initial value
+                                             3, 10, 20,            // min, max, initial value
                                              (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | 
                                               SL_STYLE_OUTLINE | SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),                                              
                                              ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
@@ -666,7 +666,7 @@ void OnCanvasPaint(tWidget *psWidget, tContext *psContext)
         GrContextForegroundSet(psContext, ClrGreen);
         GrStringDraw(psContext, "Status: Normal", -1, 40, 120, 0);
     }
-    
+
     // Optional: show thresholds
     GrContextFontSet(psContext, &g_sFontCm12);
     GrContextForegroundSet(psContext, ClrLightGrey);
@@ -1121,7 +1121,7 @@ void OnEngineCanvasPaint(tWidget *psWidget, tContext *psContext)
     usprintf(buf, "Max Engine Accel: %3d", g_ui32AccelMaxVal);
     GrStringDraw(psContext, buf, -1, 40, 40, 0);
 
-    usprintf(buf, "Range Tr Dist: %3d cm", g_ui32DetRangeVal);
+    usprintf(buf, "Range Tr Dist: %3d mm", g_ui32DetRangeVal);
     GrStringDraw(psContext, buf, -1, 40, 80, 0);
 
     usprintf(buf, "Crash Threshold: %3d", g_ui32CrashThreshold);
@@ -1145,7 +1145,7 @@ void OnCrashTolSliderChange(tWidget *psWidget, int32_t i32Value)
         SliderTextSet(&g_sCrashTolSlider, pcSliderText);
 
         // Update the variable you want to control
-        g_ui32CrashThreshold = (uint32_t)i32Value * 10;   // Example scaling
+        g_ui32CrashThreshold = (uint32_t)i32Value;   // Example scaling
 
         // ONLY repaint when slider actually changes
         if (g_ui32Panel == 1)
