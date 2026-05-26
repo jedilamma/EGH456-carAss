@@ -109,7 +109,7 @@ extern void vCreateTask( void );
 /*-----------------------------------------------------------*/
 
 int main( void )
-{
+ {
     /* Prepare the hardware to run this example. */
     prvSetupHardware();
 
