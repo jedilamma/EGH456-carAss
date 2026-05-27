@@ -119,7 +119,7 @@ extern bool g_bHeatingOn;
 extern bool g_bSHT31Valid;
 extern bool g_faultSwitch;
 extern bool g_startDisplay;
-extern bool g_bFaultAcknowledged;
+extern volatile bool g_bFaultAcknowledged;
 
 extern int32_t  g_i32CabinTempCx100;
 extern uint32_t g_ui32CabinHumidityRHx100;

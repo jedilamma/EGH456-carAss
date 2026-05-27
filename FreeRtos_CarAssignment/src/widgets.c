@@ -276,7 +276,7 @@ tSliderWidget g_sDashboardSlider = SliderStruct(&g_sDashboard,
                                                 0,                              // No children
                                                 &g_sKentec320x240x16_SSD2119,
                                                 10, 50, 25, 140,               // x, y, width, height  ← adjust as needed
-                                                0, 2000, 0,                    // min, max, initial value
+                                                0, 3000, 0,                    // min, max, initial value
                                                 (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
                                                 SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT | SL_STYLE_VERTICAL),
                                                 ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
@@ -1240,16 +1240,11 @@ void OnClearFaultButtonPress(tWidget *psWidget)
 
     SafeUARTprintf("XF pressed - fault acknowledgement requested\r\n");
 
+    // Only REQUEST the ack. Let the motor task handle the actual transition.
     g_bFaultAcknowledged = true;
     g_bMotorFaultAckRequested = true;
 
-    //clear all faults
-    ClearAllFaults();
     UpdateFaultPanel();
-    // if (xEventGroup)
-    // {
-    //     xEventGroupSetBits(xEventGroup, EVENT_FAULT_ACK);
-    // }
     WidgetPaint((tWidget *)&g_sFaultButtonCanvas);
 }
 
@@ -1361,22 +1356,10 @@ void ClearAllFaults(void)
 {
     // Clear all fault bits
     g_ui32ActiveFaults = 0;
-
-    // Also clear warnings if you want
     g_ui32ActiveWarnings = 0;
 
     // Clear motor module fault
     Motor_ClearFault();
-
-    // Reset fault acknowledge flags
-    g_bFaultAcknowledged = false;
-    g_bMotorFaultAckRequested = false;
-
-    // Optional: Force motor back to IDLE if it was latched
-    if (g_eMotorState == MOTOR_FAULT_LATCHED || g_eMotorState == MOTOR_ESTOP_BRAKING)
-    {
-        SetMotorState(MOTOR_IDLE);
-    }
 
     SafeUARTprintf("All faults cleared\r\n");
 }

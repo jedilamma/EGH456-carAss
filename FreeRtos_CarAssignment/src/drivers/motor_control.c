@@ -357,7 +357,7 @@ static void prvUpdateSpeedEstimate(uint32_t elapsedMs)
         rpm = (delta * 60.0f) / (g_hallEdgesPerRev * sampleTimeSec);
     }
 
-    const float SPEED_CALIBRATION = 0.18f;     // ← Start with 0.65 and adjust
+    const float SPEED_CALIBRATION = 0.17f;     // ← Start with 0.65 and adjust
     rpm = rpm * SPEED_CALIBRATION;
 
     // Hard sanity clamp
